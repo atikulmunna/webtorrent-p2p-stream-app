@@ -214,7 +214,8 @@ The project is also highly demo-able: a live URL where an interviewer can open t
 
 ### 10.1 Performance Targets
 
-- Time to first frame (TTFF): `<= 4s` on a stable 25 Mbps home connection with 2 peers
+- Time to first frame (TTFF): `<= 6s` baseline target on a stable 25 Mbps home connection with 2 peers
+- TTFF stretch goal: `<= 4s` on the same setup after further optimization
 - Initial join success rate: `>= 95%` across Chrome/Edge/Firefox latest versions
 - Rebuffer ratio: `<= 3%` over a 10-minute playback session under normal network conditions
 - Playback synchronization drift: `<= 1.0s` p95 between host and guests

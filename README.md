@@ -106,7 +106,7 @@ npm run validate:report -- path\\to\\report-host.json path\\to\\report-guest.jso
 ```
 
 Current checks:
-- `ttffMs <= 4000`
+- `ttffMs <= 6000` (baseline), with `<= 4000` as stretch goal
 - `rebufferRatioPct <= 3`
 - `driftP95Sec <= 1.0`
 

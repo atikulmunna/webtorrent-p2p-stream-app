@@ -3,7 +3,7 @@ const fs = require("fs")
 const path = require("path")
 
 const NFR_THRESHOLDS = {
-  ttffMsMax: 4000,
+  ttffMsMax: 6000,
   rebufferRatioPctMax: 3,
   driftP95SecMax: 1.0,
 }

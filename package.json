@@ -10,6 +10,7 @@
     "build": "npm run build --prefix client",
     "start": "npm run start --prefix server",
     "validate:report": "node scripts/evaluate-validation-report.js",
+    "validate:relay": "node scripts/evaluate-validation-report.js --require-relay",
     "video:normalize": "node scripts/normalize-video.js"
   },
   "repository": {

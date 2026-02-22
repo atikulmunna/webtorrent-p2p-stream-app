@@ -9,9 +9,9 @@ Browser-based P2P video streaming app spec and execution plan using WebTorrent +
   - `client`: React + Vite control panel for signaling room flow
   - `server`: Express + Socket.io signaling server with room lifecycle events
 - Implemented baseline features:
-  - `M1` in progress: host file upload and magnet generation via WebTorrent
+  - `M1` done: host file upload and magnet generation via WebTorrent
   - `M2` in progress: room create/join/leave with live peer presence
-  - `M3` in progress: guest join by magnet and in-browser video render
+  - `M3` done: guest join by magnet and in-browser video render
   - `M5` in progress: host playback events (`play/pause/seek`) relay to guests
   - `M6` in progress: guest drift correction from periodic sync events
   - `M7` in progress: peer counter and peer list UI
@@ -103,6 +103,12 @@ Multiple reports:
 
 ```bash
 npm run validate:report -- path\\to\\report-host.json path\\to\\report-guest.json
+```
+
+Forced-relay validation (`M4`) requiring TURN relay mode:
+
+```bash
+npm run validate:relay -- path\\to\\report-host.json path\\to\\report-guest.json
 ```
 
 Current checks:

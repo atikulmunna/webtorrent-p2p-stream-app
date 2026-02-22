@@ -67,6 +67,8 @@ function App() {
   const stallWatchTimerRef = useRef(null)
   const reRenderAttemptsRef = useRef(0)
   const playRetryTimerRef = useRef(null)
+  const metadataTimeoutRef = useRef(null)
+  const streamSessionIdRef = useRef(0)
   const rtcConfig = useMemo(() => {
     const iceServers = []
 
@@ -142,6 +144,7 @@ function App() {
   }
 
   const resetStreamingSession = () => {
+    streamSessionIdRef.current += 1
     destroyTorrentSafely(streamTorrentRef)
     currentVideoFileRef.current = null
     playbackStartedRef.current = false
@@ -149,6 +152,10 @@ function App() {
     if (stallWatchTimerRef.current) {
       clearTimeout(stallWatchTimerRef.current)
       stallWatchTimerRef.current = null
+    }
+    if (metadataTimeoutRef.current) {
+      clearTimeout(metadataTimeoutRef.current)
+      metadataTimeoutRef.current = null
     }
     if (playRetryTimerRef.current) {
       clearInterval(playRetryTimerRef.current)
@@ -409,6 +416,7 @@ function App() {
   const startStreamingFromMagnet = () => {
     if (!joinMagnetUri.trim() || !webTorrentClientRef.current) return
     resetStreamingSession()
+    const sessionId = streamSessionIdRef.current
     resetMetrics()
     metricsRef.current.streamStartRequestedAt = Date.now()
     setStreamStatus("Joining swarm")
@@ -421,32 +429,41 @@ function App() {
 
     addEvent(`InfoHash: ${torrent.infoHash || "pending"}`)
 
-    const metadataTimeout = setTimeout(() => {
-      if (!torrent.metadata) {
+    metadataTimeoutRef.current = setTimeout(() => {
+      if (sessionId !== streamSessionIdRef.current) return
+      if (!torrent.metadata && !playbackStartedRef.current) {
         setStreamStatus("Error")
         addEvent("! Metadata timeout after 25s (tracker/peer discovery issue)")
       }
     }, 25_000)
 
     torrent.on("warning", (err) => {
+      if (sessionId !== streamSessionIdRef.current) return
       addEvent(`! Torrent warning: ${err.message}`)
     })
 
     torrent.on("error", (err) => {
+      if (sessionId !== streamSessionIdRef.current) return
       setStreamStatus("Error")
       addEvent(`! Torrent error: ${err.message}`)
     })
 
     torrent.on("noPeers", (announceType) => {
+      if (sessionId !== streamSessionIdRef.current) return
       addEvent(`! No peers from ${announceType || "announce"} yet`)
     })
 
     torrent.on("wire", () => {
+      if (sessionId !== streamSessionIdRef.current) return
       addEvent(`Wire connected. Swarm peers: ${torrent.numPeers}`)
     })
 
     torrent.on("ready", () => {
-      clearTimeout(metadataTimeout)
+      if (sessionId !== streamSessionIdRef.current) return
+      if (metadataTimeoutRef.current) {
+        clearTimeout(metadataTimeoutRef.current)
+        metadataTimeoutRef.current = null
+      }
       if (typeof torrent.select === "function" && torrent.pieces?.length) {
         const end = Math.min(1024, torrent.pieces.length - 1)
         torrent.select(0, end, 10)
@@ -478,13 +495,18 @@ function App() {
     })
 
     torrent.on("metadata", () => {
-      clearTimeout(metadataTimeout)
+      if (sessionId !== streamSessionIdRef.current) return
+      if (metadataTimeoutRef.current) {
+        clearTimeout(metadataTimeoutRef.current)
+        metadataTimeoutRef.current = null
+      }
       addEvent(`Metadata received. Files: ${torrent.files.length}`)
       armPlaybackStallWatch()
     })
 
     let lastTickAt = Date.now()
     torrent.on("download", (bytes) => {
+      if (sessionId !== streamSessionIdRef.current) return
       const now = Date.now()
       const dtSec = Math.max((now - lastTickAt) / 1000, 0.001)
       lastTickAt = now

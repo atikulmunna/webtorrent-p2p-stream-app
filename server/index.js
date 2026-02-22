@@ -1,3 +1,5 @@
+require("dotenv").config()
+
 const http = require("http")
 const { randomUUID } = require("crypto")
 const express = require("express")
@@ -5,8 +7,9 @@ const cors = require("cors")
 const { Server } = require("socket.io")
 const { addPeer, ensureRoom, getRoom, isHostClient, listPeers, removePeer } = require("./rooms")
 
-const PORT = process.env.PORT || 4000
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173"
+const SERVER_PORT = Number(process.env.SERVER_PORT || process.env.PORT || 4000)
+const CLIENT_PORT = Number(process.env.CLIENT_PORT || process.env.VITE_DEV_SERVER_PORT || 5173)
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || `http://localhost:${CLIENT_PORT}`
 const ROOM_ID_MAX = 64
 const CLIENT_ID_MAX = 64
 const DISPLAY_NAME_MAX = 40
@@ -226,6 +229,7 @@ io.on("connection", (socket) => {
   })
 })
 
-server.listen(PORT, () => {
-  console.log(`Signaling server listening on http://localhost:${PORT}`)
+server.listen(SERVER_PORT, () => {
+  console.log(`Signaling server listening on http://localhost:${SERVER_PORT}`)
+  console.log(`Allowed client origin: ${CLIENT_ORIGIN}`)
 })

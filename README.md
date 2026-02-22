@@ -57,9 +57,15 @@ npm run dev
 - Client env template: `client/.env.example`
 - Server env template: `server/.env.example`
 - TURN/STUN client vars:
+  - `VITE_DEV_SERVER_PORT` to pick preferred client dev port (fallback auto if busy)
+  - `VITE_SIGNALING_URL` should match server port (for example `http://localhost:4000`)
   - `VITE_STUN_URLS` (comma-separated STUN URLs)
   - `VITE_TURN_URLS`, `VITE_TURN_USERNAME`, `VITE_TURN_CREDENTIAL`
   - `VITE_FORCE_TURN=1` to force relay-only mode during fallback tests
+- Server vars:
+  - `SERVER_PORT` for signaling server port
+  - `CLIENT_PORT` for default allowed client origin (`http://localhost:<CLIENT_PORT>`)
+  - optional `CLIENT_ORIGIN` to override full origin explicitly
 
 ## Next Build Target
 

@@ -5,13 +5,29 @@ import "./App.css"
 function App() {
   const signalingUrl = import.meta.env.VITE_SIGNALING_URL || "http://localhost:4000"
   const clientId = useMemo(() => crypto.randomUUID(), [])
+  const trackers = useMemo(
+    () => [
+      "wss://tracker.openwebtorrent.com",
+      "wss://tracker.btorrent.xyz",
+      "wss://tracker.webtorrent.dev",
+    ],
+    [],
+  )
   const [displayName, setDisplayName] = useState("Host")
   const [roomId, setRoomId] = useState("")
   const [activeRoom, setActiveRoom] = useState("")
   const [status, setStatus] = useState("Disconnected")
   const [peers, setPeers] = useState([])
   const [events, setEvents] = useState([])
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [magnetUri, setMagnetUri] = useState("")
+  const [joinMagnetUri, setJoinMagnetUri] = useState("")
+  const [webTorrentReady, setWebTorrentReady] = useState(false)
+  const [streamStatus, setStreamStatus] = useState("Idle")
+  const [currentTorrentName, setCurrentTorrentName] = useState("")
   const socketRef = useRef(null)
+  const webTorrentClientRef = useRef(null)
+  const videoRef = useRef(null)
 
   useEffect(() => {
     const s = io(signalingUrl, { autoConnect: true })
@@ -33,6 +49,37 @@ function App() {
       socketRef.current = null
     }
   }, [signalingUrl])
+
+  useEffect(() => {
+    if (!window.WebTorrent) {
+      setEvents((prev) =>
+        ["! WebTorrent browser bundle not found. Check index.html script include.", ...prev].slice(
+          0,
+          8,
+        ),
+      )
+      return
+    }
+
+    const client = new window.WebTorrent()
+    webTorrentClientRef.current = client
+    setWebTorrentReady(true)
+
+    client.on("error", (err) => {
+      setEvents((prev) => [`! WebTorrent error: ${err.message}`, ...prev].slice(0, 8))
+      setStreamStatus("Error")
+    })
+
+    return () => {
+      try {
+        client.destroy()
+      } catch {
+        // no-op cleanup
+      } finally {
+        webTorrentClientRef.current = null
+      }
+    }
+  }, [])
 
   const createRoom = () => {
     if (!roomId.trim()) return
@@ -82,6 +129,63 @@ function App() {
     setEvents((prev) => ["Left room", ...prev].slice(0, 8))
   }
 
+  const createTorrentFromFile = () => {
+    if (!selectedFile || !webTorrentClientRef.current) return
+
+    setStreamStatus("Creating torrent")
+    webTorrentClientRef.current.seed(
+      selectedFile,
+      { announce: trackers, private: false },
+      (torrent) => {
+        setMagnetUri(torrent.magnetURI)
+        setJoinMagnetUri(torrent.magnetURI)
+        setCurrentTorrentName(torrent.name || selectedFile.name)
+        setEvents((prev) => [`Seeded: ${torrent.name} (${torrent.numPeers} peers)`, ...prev].slice(0, 8))
+        setStreamStatus("Seeding")
+      },
+    )
+  }
+
+  const startStreamingFromMagnet = () => {
+    if (!joinMagnetUri.trim() || !webTorrentClientRef.current) return
+    setStreamStatus("Joining swarm")
+
+    const torrent = webTorrentClientRef.current.add(joinMagnetUri.trim(), {
+      announce: trackers,
+    })
+
+    torrent.on("ready", () => {
+      const videoFile =
+        torrent.files.find((file) => file.name.toLowerCase().endsWith(".mp4")) ||
+        torrent.files.find((file) => file.name.toLowerCase().endsWith(".webm")) ||
+        torrent.files.find((file) => file.name.toLowerCase().endsWith(".mkv")) ||
+        torrent.files[0]
+
+      if (!videoFile) {
+        setEvents((prev) => ["! No playable file found in torrent.", ...prev].slice(0, 8))
+        setStreamStatus("Error")
+        return
+      }
+
+      setCurrentTorrentName(videoFile.name)
+      setEvents((prev) => [`Streaming: ${videoFile.name}`, ...prev].slice(0, 8))
+      setStreamStatus("Streaming")
+      videoFile.renderTo(videoRef.current)
+    })
+
+    torrent.on("download", () => {
+      if (torrent.progress > 0) {
+        setStreamStatus(`Streaming (${Math.round(torrent.progress * 100)}%)`)
+      }
+    })
+  }
+
+  const copyMagnet = async () => {
+    if (!magnetUri) return
+    await navigator.clipboard.writeText(magnetUri)
+    setEvents((prev) => ["Magnet copied to clipboard", ...prev].slice(0, 8))
+  }
+
   return (
     <main className="app">
       <header>
@@ -126,6 +230,59 @@ function App() {
           Active room: <strong>{activeRoom || "None"}</strong>
         </p>
         <p>Client ID: {clientId}</p>
+      </section>
+
+      <section className="grid">
+        <div className="card">
+          <h2>M1: Create Torrent (Host)</h2>
+          <p>WebTorrent: {webTorrentReady ? "Ready" : "Not Ready"}</p>
+          <div className="row">
+            <label htmlFor="fileInput">Video file</label>
+            <input
+              id="fileInput"
+              type="file"
+              accept="video/mp4,video/webm,video/*"
+              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+            />
+          </div>
+          <div className="actions">
+            <button onClick={createTorrentFromFile} disabled={!selectedFile || !webTorrentReady}>
+              Create Magnet
+            </button>
+            <button onClick={copyMagnet} disabled={!magnetUri}>
+              Copy Magnet
+            </button>
+          </div>
+          {magnetUri ? (
+            <textarea readOnly value={magnetUri} rows={4} />
+          ) : (
+            <p>No magnet generated yet.</p>
+          )}
+        </div>
+
+        <div className="card">
+          <h2>M3: Join and Stream (Guest)</h2>
+          <p>Stream status: {streamStatus}</p>
+          <div className="row">
+            <label htmlFor="magnetInput">Magnet URI</label>
+            <textarea
+              id="magnetInput"
+              value={joinMagnetUri}
+              onChange={(e) => setJoinMagnetUri(e.target.value)}
+              rows={4}
+              placeholder="Paste magnet URI"
+            />
+          </div>
+          <button onClick={startStreamingFromMagnet} disabled={!joinMagnetUri || !webTorrentReady}>
+            Start Streaming
+          </button>
+          <p>Current media: {currentTorrentName || "None"}</p>
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Video Player</h2>
+        <video ref={videoRef} controls playsInline className="video" />
       </section>
 
       <section className="grid">

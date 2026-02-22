@@ -30,10 +30,12 @@
   flex-wrap: wrap;
 }
 
-input {
+input,
+textarea {
   border: 1px solid #cfd6dd;
   border-radius: 8px;
   padding: 0.55rem 0.7rem;
+  font: inherit;
 }
 
 button {
@@ -52,6 +54,13 @@ button:disabled {
 ul {
   margin: 0;
   padding-left: 1.1rem;
+}
+
+.video {
+  width: 100%;
+  max-height: 480px;
+  background: #0a111d;
+  border-radius: 10px;
 }
 
 @media (max-width: 768px) {

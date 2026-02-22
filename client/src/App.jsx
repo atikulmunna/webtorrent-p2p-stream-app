@@ -65,6 +65,7 @@ function App() {
   const playbackStartedRef = useRef(false)
   const stallWatchTimerRef = useRef(null)
   const reRenderAttemptsRef = useRef(0)
+  const playRetryTimerRef = useRef(null)
   const rtcConfig = useMemo(() => {
     const iceServers = []
 
@@ -148,6 +149,10 @@ function App() {
       clearTimeout(stallWatchTimerRef.current)
       stallWatchTimerRef.current = null
     }
+    if (playRetryTimerRef.current) {
+      clearInterval(playRetryTimerRef.current)
+      playRetryTimerRef.current = null
+    }
     if (playbackRateResetTimerRef.current) {
       clearTimeout(playbackRateResetTimerRef.current)
       playbackRateResetTimerRef.current = null
@@ -189,18 +194,48 @@ function App() {
           }
           activeBlobUrlRef.current = url
           videoRef.current.src = url
+          videoRef.current.preload = "auto"
           videoRef.current.load()
-          videoRef.current.play().catch(() => {})
+          attemptAutoPlay()
           addEvent("Using Blob URL fallback renderer")
         })
         return
       }
 
+      videoRef.current.preload = "auto"
       videoFile.renderTo(videoRef.current)
+      attemptAutoPlay()
     } catch (err) {
       setStreamStatus("Error")
       addEvent(`! Render error: ${err.message}`)
     }
+  }
+
+  const attemptAutoPlay = () => {
+    const el = videoRef.current
+    if (!el) return
+    el.play().catch(() => {})
+  }
+
+  const startPlayRetryLoop = () => {
+    if (playRetryTimerRef.current) {
+      clearInterval(playRetryTimerRef.current)
+      playRetryTimerRef.current = null
+    }
+    let attempts = 0
+    playRetryTimerRef.current = setInterval(() => {
+      if (playbackStartedRef.current || !videoRef.current) {
+        clearInterval(playRetryTimerRef.current)
+        playRetryTimerRef.current = null
+        return
+      }
+      attempts += 1
+      attemptAutoPlay()
+      if (attempts >= 8) {
+        clearInterval(playRetryTimerRef.current)
+        playRetryTimerRef.current = null
+      }
+    }, 500)
   }
 
   const armPlaybackStallWatch = () => {
@@ -210,7 +245,11 @@ function App() {
     stallWatchTimerRef.current = setTimeout(() => {
       const el = videoRef.current
       if (!el || playbackStartedRef.current) return
-      if (torrentProgressPct < 90) return
+      const torrent = streamTorrentRef.current
+      if (!torrent || torrent.progress < 0.05) {
+        armPlaybackStallWatch()
+        return
+      }
       if (!currentVideoFileRef.current) return
 
       if (reRenderAttemptsRef.current >= 1) {
@@ -220,10 +259,10 @@ function App() {
       }
 
       reRenderAttemptsRef.current += 1
-      addEvent("Playback stalled after high progress; trying Blob URL fallback")
+      addEvent("Playback stalled after metadata/download; trying Blob URL fallback")
       renderVideoFile(currentVideoFileRef.current, true)
       armPlaybackStallWatch()
-    }, 8000)
+    }, 3500)
   }
 
   useEffect(() => {
@@ -422,12 +461,14 @@ function App() {
       addEvent(`Streaming: ${videoFile.name}`)
       setStreamStatus("Streaming")
       renderVideoFile(videoFile)
+      startPlayRetryLoop()
       armPlaybackStallWatch()
     })
 
     torrent.on("metadata", () => {
       clearTimeout(metadataTimeout)
       addEvent(`Metadata received. Files: ${torrent.files.length}`)
+      armPlaybackStallWatch()
     })
 
     let lastTickAt = Date.now()
@@ -440,7 +481,7 @@ function App() {
         const pct = Math.round(torrent.progress * 100)
         setTorrentProgressPct(pct)
         setStreamStatus(`Streaming (${pct}%)`)
-        if (pct >= 95 && !playbackStartedRef.current) {
+        if (pct >= 5 && !playbackStartedRef.current) {
           armPlaybackStallWatch()
         }
       }
@@ -606,8 +647,19 @@ function App() {
       }
     }
 
+    const onLoadedMeta = () => {
+      attemptAutoPlay()
+      startPlayRetryLoop()
+    }
+
+    const onCanPlay = () => {
+      attemptAutoPlay()
+    }
+
     el.addEventListener("play", onPlay)
     el.addEventListener("playing", onPlaying)
+    el.addEventListener("loadedmetadata", onLoadedMeta)
+    el.addEventListener("canplay", onCanPlay)
     el.addEventListener("waiting", onWaiting)
     el.addEventListener("pause", onPause)
     el.addEventListener("seeked", onSeeked)
@@ -616,6 +668,8 @@ function App() {
     return () => {
       el.removeEventListener("play", onPlay)
       el.removeEventListener("playing", onPlaying)
+      el.removeEventListener("loadedmetadata", onLoadedMeta)
+      el.removeEventListener("canplay", onCanPlay)
       el.removeEventListener("waiting", onWaiting)
       el.removeEventListener("pause", onPause)
       el.removeEventListener("seeked", onSeeked)

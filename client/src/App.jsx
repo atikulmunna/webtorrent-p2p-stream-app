@@ -25,9 +25,54 @@ function App() {
   const [webTorrentReady, setWebTorrentReady] = useState(false)
   const [streamStatus, setStreamStatus] = useState("Idle")
   const [currentTorrentName, setCurrentTorrentName] = useState("")
+  const [isHostRole, setIsHostRole] = useState(false)
   const socketRef = useRef(null)
   const webTorrentClientRef = useRef(null)
+  const seedTorrentRef = useRef(null)
+  const streamTorrentRef = useRef(null)
   const videoRef = useRef(null)
+  const applyingRemotePlaybackRef = useRef(false)
+  const lastSyncEmitAtRef = useRef(0)
+
+  const addEvent = (text) => {
+    setEvents((prev) => [text, ...prev].slice(0, 10))
+  }
+
+  const isLikelySupportedMvpVideo = (file) => {
+    const lower = file.name.toLowerCase()
+    return lower.endsWith(".mp4")
+  }
+
+  const clearVideoElement = () => {
+    const el = videoRef.current
+    if (!el) return
+    try {
+      el.pause()
+      el.removeAttribute("src")
+      el.load()
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  const destroyTorrentSafely = (torrentRef) => {
+    const torrent = torrentRef.current
+    if (!torrent) return
+    try {
+      torrent.destroy()
+    } catch {
+      // ignore cleanup failures
+    } finally {
+      torrentRef.current = null
+    }
+  }
+
+  const resetStreamingSession = () => {
+    destroyTorrentSafely(streamTorrentRef)
+    clearVideoElement()
+    setCurrentTorrentName("")
+    setStreamStatus("Idle")
+  }
 
   useEffect(() => {
     const s = io(signalingUrl, { autoConnect: true })
@@ -92,11 +137,12 @@ function App() {
       },
       (ack) => {
         if (!ack?.ok) {
-          setEvents((prev) => [`! Failed: ${ack?.errorCode || "UNKNOWN"}`, ...prev].slice(0, 8))
+          addEvent(`! Failed: ${ack?.errorCode || "UNKNOWN"}`)
           return
         }
         setActiveRoom(ack.roomId)
-        setEvents((prev) => [`Room ${ack.roomId} created`, ...prev].slice(0, 8))
+        setIsHostRole(true)
+        addEvent(`Room ${ack.roomId} created`)
       },
     )
   }
@@ -112,11 +158,12 @@ function App() {
       },
       (ack) => {
         if (!ack?.ok) {
-          setEvents((prev) => [`! Failed: ${ack?.errorCode || "UNKNOWN"}`, ...prev].slice(0, 8))
+          addEvent(`! Failed: ${ack?.errorCode || "UNKNOWN"}`)
           return
         }
         setActiveRoom(ack.roomId)
-        setEvents((prev) => [`Joined ${ack.roomId}`, ...prev].slice(0, 8))
+        setIsHostRole(false)
+        addEvent(`Joined ${ack.roomId}`)
       },
     )
   }
@@ -126,21 +173,30 @@ function App() {
     socketRef.current?.emit("room:leave", { roomId: activeRoom, clientId })
     setActiveRoom("")
     setPeers([])
-    setEvents((prev) => ["Left room", ...prev].slice(0, 8))
+    setIsHostRole(false)
+    addEvent("Left room")
   }
 
   const createTorrentFromFile = () => {
     if (!selectedFile || !webTorrentClientRef.current) return
 
+    if (!isLikelySupportedMvpVideo(selectedFile)) {
+      setStreamStatus("Error")
+      addEvent("! Unsupported file. MVP supports .mp4 (H.264/AAC recommended).")
+      return
+    }
+
+    destroyTorrentSafely(seedTorrentRef)
     setStreamStatus("Creating torrent")
     webTorrentClientRef.current.seed(
       selectedFile,
       { announce: trackers, private: false },
       (torrent) => {
+        seedTorrentRef.current = torrent
         setMagnetUri(torrent.magnetURI)
         setJoinMagnetUri(torrent.magnetURI)
         setCurrentTorrentName(torrent.name || selectedFile.name)
-        setEvents((prev) => [`Seeded: ${torrent.name} (${torrent.numPeers} peers)`, ...prev].slice(0, 8))
+        addEvent(`Seeded: ${torrent.name} (${torrent.numPeers} peers)`)
         setStreamStatus("Seeding")
       },
     )
@@ -148,27 +204,28 @@ function App() {
 
   const startStreamingFromMagnet = () => {
     if (!joinMagnetUri.trim() || !webTorrentClientRef.current) return
+    resetStreamingSession()
     setStreamStatus("Joining swarm")
 
     const torrent = webTorrentClientRef.current.add(joinMagnetUri.trim(), {
       announce: trackers,
     })
+    streamTorrentRef.current = torrent
 
     torrent.on("ready", () => {
       const videoFile =
         torrent.files.find((file) => file.name.toLowerCase().endsWith(".mp4")) ||
         torrent.files.find((file) => file.name.toLowerCase().endsWith(".webm")) ||
-        torrent.files.find((file) => file.name.toLowerCase().endsWith(".mkv")) ||
-        torrent.files[0]
+        null
 
       if (!videoFile) {
-        setEvents((prev) => ["! No playable file found in torrent.", ...prev].slice(0, 8))
+        addEvent("! No supported file found. MVP supports .mp4 or .webm stream inputs.")
         setStreamStatus("Error")
         return
       }
 
       setCurrentTorrentName(videoFile.name)
-      setEvents((prev) => [`Streaming: ${videoFile.name}`, ...prev].slice(0, 8))
+      addEvent(`Streaming: ${videoFile.name}`)
       setStreamStatus("Streaming")
       videoFile.renderTo(videoRef.current)
     })
@@ -183,8 +240,111 @@ function App() {
   const copyMagnet = async () => {
     if (!magnetUri) return
     await navigator.clipboard.writeText(magnetUri)
-    setEvents((prev) => ["Magnet copied to clipboard", ...prev].slice(0, 8))
+    addEvent("Magnet copied to clipboard")
   }
+
+  const stopStreaming = () => {
+    resetStreamingSession()
+    addEvent("Stopped active stream session")
+  }
+
+  useEffect(() => {
+    const s = socketRef.current
+    if (!s) return
+
+    const onPlaybackState = (payload) => {
+      if (!videoRef.current || isHostRole || payload?.roomId !== activeRoom) return
+      applyingRemotePlaybackRef.current = true
+      if (typeof payload.mediaTimeSec === "number") {
+        videoRef.current.currentTime = payload.mediaTimeSec
+      }
+      if (payload.state === "play") {
+        videoRef.current.play().catch(() => {})
+      } else if (payload.state === "pause") {
+        videoRef.current.pause()
+      }
+      addEvent(`Sync state: ${payload.state} @ ${Number(payload.mediaTimeSec || 0).toFixed(1)}s`)
+      setTimeout(() => {
+        applyingRemotePlaybackRef.current = false
+      }, 80)
+    }
+
+    const onPlaybackSeek = (payload) => {
+      if (!videoRef.current || isHostRole || payload?.roomId !== activeRoom) return
+      applyingRemotePlaybackRef.current = true
+      if (typeof payload.mediaTimeSec === "number") {
+        videoRef.current.currentTime = payload.mediaTimeSec
+        addEvent(`Sync seek: ${Number(payload.mediaTimeSec).toFixed(1)}s`)
+      }
+      setTimeout(() => {
+        applyingRemotePlaybackRef.current = false
+      }, 80)
+    }
+
+    s.on("playback:state", onPlaybackState)
+    s.on("playback:seek", onPlaybackSeek)
+    return () => {
+      s.off("playback:state", onPlaybackState)
+      s.off("playback:seek", onPlaybackSeek)
+    }
+  }, [activeRoom, isHostRole])
+
+  useEffect(() => {
+    const el = videoRef.current
+    if (!el) return
+
+    const emitPlaybackState = (state) => {
+      if (!isHostRole || !activeRoom || applyingRemotePlaybackRef.current) return
+      socketRef.current?.emit("playback:state", {
+        roomId: activeRoom,
+        state,
+        mediaTimeSec: el.currentTime,
+        sentAtMs: Date.now(),
+      })
+    }
+
+    const onPlay = () => emitPlaybackState("play")
+    const onPause = () => emitPlaybackState("pause")
+    const onSeeked = () => {
+      if (!isHostRole || !activeRoom || applyingRemotePlaybackRef.current) return
+      socketRef.current?.emit("playback:seek", {
+        roomId: activeRoom,
+        mediaTimeSec: el.currentTime,
+        sentAtMs: Date.now(),
+      })
+    }
+
+    const onTimeUpdate = () => {
+      const now = Date.now()
+      if (now - lastSyncEmitAtRef.current < 3000) return
+      if (!isHostRole || !activeRoom || applyingRemotePlaybackRef.current) return
+      lastSyncEmitAtRef.current = now
+      socketRef.current?.emit("playback:sync", {
+        roomId: activeRoom,
+        mediaTimeSec: el.currentTime,
+        hostNowMs: now,
+      })
+    }
+
+    el.addEventListener("play", onPlay)
+    el.addEventListener("pause", onPause)
+    el.addEventListener("seeked", onSeeked)
+    el.addEventListener("timeupdate", onTimeUpdate)
+
+    return () => {
+      el.removeEventListener("play", onPlay)
+      el.removeEventListener("pause", onPause)
+      el.removeEventListener("seeked", onSeeked)
+      el.removeEventListener("timeupdate", onTimeUpdate)
+    }
+  }, [activeRoom, isHostRole])
+
+  useEffect(() => {
+    return () => {
+      destroyTorrentSafely(seedTorrentRef)
+      resetStreamingSession()
+    }
+  }, [])
 
   return (
     <main className="app">
@@ -228,6 +388,9 @@ function App() {
         <h2>Room</h2>
         <p>
           Active room: <strong>{activeRoom || "None"}</strong>
+        </p>
+        <p>
+          Role: <strong>{isHostRole ? "Host" : "Guest"}</strong>
         </p>
         <p>Client ID: {clientId}</p>
       </section>
@@ -276,6 +439,7 @@ function App() {
           <button onClick={startStreamingFromMagnet} disabled={!joinMagnetUri || !webTorrentReady}>
             Start Streaming
           </button>
+          <button onClick={stopStreaming}>Stop Streaming</button>
           <p>Current media: {currentTorrentName || "None"}</p>
         </div>
       </section>

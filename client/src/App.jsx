@@ -57,6 +57,7 @@ function App() {
   const seedTorrentRef = useRef(null)
   const streamTorrentRef = useRef(null)
   const currentVideoFileRef = useRef(null)
+  const activeBlobUrlRef = useRef(null)
   const videoRef = useRef(null)
   const applyingRemotePlaybackRef = useRef(false)
   const lastSyncEmitAtRef = useRef(0)
@@ -115,6 +116,10 @@ function App() {
     if (!el) return
     try {
       el.pause()
+      if (activeBlobUrlRef.current) {
+        URL.revokeObjectURL(activeBlobUrlRef.current)
+        activeBlobUrlRef.current = null
+      }
       el.removeAttribute("src")
       el.load()
     } catch {
@@ -167,10 +172,30 @@ function App() {
     setValidationReport(null)
   }
 
-  const renderVideoFile = (videoFile) => {
+  const renderVideoFile = (videoFile, forceBlobFallback = false) => {
     if (!videoRef.current || !videoFile) return
     currentVideoFileRef.current = videoFile
+    if (activeBlobUrlRef.current) {
+      URL.revokeObjectURL(activeBlobUrlRef.current)
+      activeBlobUrlRef.current = null
+    }
     try {
+      if (forceBlobFallback) {
+        videoFile.getBlobURL((err, url) => {
+          if (err || !url) {
+            setStreamStatus("Error")
+            addEvent(`! Blob fallback failed: ${err?.message || "unknown error"}`)
+            return
+          }
+          activeBlobUrlRef.current = url
+          videoRef.current.src = url
+          videoRef.current.load()
+          videoRef.current.play().catch(() => {})
+          addEvent("Using Blob URL fallback renderer")
+        })
+        return
+      }
+
       videoFile.renderTo(videoRef.current)
     } catch (err) {
       setStreamStatus("Error")
@@ -195,8 +220,8 @@ function App() {
       }
 
       reRenderAttemptsRef.current += 1
-      addEvent("Playback stalled after high progress; retrying render once")
-      renderVideoFile(currentVideoFileRef.current)
+      addEvent("Playback stalled after high progress; trying Blob URL fallback")
+      renderVideoFile(currentVideoFileRef.current, true)
       armPlaybackStallWatch()
     }, 8000)
   }

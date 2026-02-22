@@ -14,23 +14,23 @@ function findFfmpeg() {
   const explicit = process.env.FFMPEG_BIN
   if (explicit && existsSync(explicit)) return explicit
 
-  const candidates = [
-    "ffmpeg",
-    path.join(
-      process.env.LOCALAPPDATA || "",
-      "Microsoft",
-      "WinGet",
-      "Packages",
-      "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe",
-      "ffmpeg-8.0.1-full_build",
-      "bin",
-      "ffmpeg.exe",
-    ),
-  ]
+  // First, try ffmpeg from PATH.
+  const pathCheck = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" })
+  if (pathCheck.status === 0) return "ffmpeg"
 
-  for (const c of candidates) {
-    if (c === "ffmpeg") return c
-    if (existsSync(c)) return c
+  // Fallback for WinGet install location.
+  const wingetPath = path.join(
+    process.env.LOCALAPPDATA || "",
+    "Microsoft",
+    "WinGet",
+    "Packages",
+    "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe",
+    "ffmpeg-8.0.1-full_build",
+    "bin",
+    "ffmpeg.exe",
+  )
+  if (existsSync(wingetPath)) {
+    return wingetPath
   }
   return null
 }

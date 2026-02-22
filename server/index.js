@@ -10,6 +10,7 @@ const { addPeer, ensureRoom, getRoom, isHostClient, listPeers, removePeer } = re
 const SERVER_PORT = Number(process.env.SERVER_PORT || process.env.PORT || 4000)
 const CLIENT_PORT = Number(process.env.CLIENT_PORT || process.env.VITE_DEV_SERVER_PORT || 5173)
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || `http://localhost:${CLIENT_PORT}`
+const TRACKER_WS_PORT = Number(process.env.TRACKER_WS_PORT || 8000)
 const ROOM_ID_MAX = 64
 const CLIENT_ID_MAX = 64
 const DISPLAY_NAME_MAX = 40
@@ -79,6 +80,34 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
   },
 })
+
+let trackerServer = null
+
+async function startWebTorrentTracker() {
+  try {
+    const { Server: TrackerServer } = await import("bittorrent-tracker")
+    trackerServer = new TrackerServer({
+      udp: false,
+      http: false,
+      ws: true,
+      stats: false,
+    })
+
+    trackerServer.on("warning", (err) => {
+      console.warn(`Tracker warning: ${err.message}`)
+    })
+    trackerServer.on("error", (err) => {
+      console.error(`Tracker error: ${err.message}`)
+    })
+    trackerServer.on("listening", () => {
+      console.log(`WebTorrent tracker listening on ws://localhost:${TRACKER_WS_PORT}/announce`)
+    })
+
+    trackerServer.listen(TRACKER_WS_PORT)
+  } catch (err) {
+    console.error(`Failed to start WebTorrent tracker: ${err.message}`)
+  }
+}
 
 io.on("connection", (socket) => {
   socket.on("room:create", ({ roomId, hostClientId, displayName }, ack) => {
@@ -233,3 +262,18 @@ server.listen(SERVER_PORT, () => {
   console.log(`Signaling server listening on http://localhost:${SERVER_PORT}`)
   console.log(`Allowed client origin: ${CLIENT_ORIGIN}`)
 })
+
+startWebTorrentTracker()
+
+function shutdown() {
+  if (trackerServer) {
+    try {
+      trackerServer.close()
+    } catch {
+      // no-op
+    }
+  }
+}
+
+process.on("SIGINT", shutdown)
+process.on("SIGTERM", shutdown)

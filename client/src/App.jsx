@@ -4,6 +4,17 @@ import "./App.css"
 
 function App() {
   const signalingUrl = import.meta.env.VITE_SIGNALING_URL || "http://localhost:4000"
+  const trackerUrls = useMemo(
+    () =>
+      (
+        import.meta.env.VITE_TRACKER_URLS ||
+        "ws://localhost:8000/announce,wss://tracker.openwebtorrent.com,wss://tracker.webtorrent.dev"
+      )
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean),
+    [],
+  )
   const forceTurnOnly = import.meta.env.VITE_FORCE_TURN === "1"
   const stunUrls = useMemo(
     () =>
@@ -24,14 +35,6 @@ function App() {
   const turnUsername = import.meta.env.VITE_TURN_USERNAME || ""
   const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL || ""
   const clientId = useMemo(() => crypto.randomUUID(), [])
-  const trackers = useMemo(
-    () => [
-      "wss://tracker.openwebtorrent.com",
-      "wss://tracker.btorrent.xyz",
-      "wss://tracker.webtorrent.dev",
-    ],
-    [],
-  )
   const [displayName, setDisplayName] = useState("Host")
   const [roomId, setRoomId] = useState("")
   const [activeRoom, setActiveRoom] = useState("")
@@ -188,6 +191,7 @@ function App() {
     addEvent(
       `RTC mode: ${forceTurnOnly ? "FORCED TURN relay" : "Auto direct + TURN fallback"} | STUN ${stunUrls.length} | TURN ${turnUrls.length}`,
     )
+    addEvent(`Tracker URLs loaded: ${trackerUrls.length}`)
 
     client.on("error", (err) => {
       setEvents((prev) => [`! WebTorrent error: ${err.message}`, ...prev].slice(0, 8))
@@ -203,7 +207,7 @@ function App() {
         webTorrentClientRef.current = null
       }
     }
-  }, [forceTurnOnly, rtcConfig, stunUrls.length, turnUrls.length])
+  }, [forceTurnOnly, rtcConfig, stunUrls.length, turnUrls.length, trackerUrls.length])
 
   const createRoom = () => {
     if (!roomId.trim()) return
@@ -269,7 +273,7 @@ function App() {
     setStreamStatus("Creating torrent")
     webTorrentClientRef.current.seed(
       selectedFile,
-      { announce: trackers, private: false },
+      { announce: trackerUrls, private: false },
       (torrent) => {
         seedTorrentRef.current = torrent
         setMagnetUri(torrent.magnetURI)
@@ -287,13 +291,41 @@ function App() {
     resetMetrics()
     metricsRef.current.streamStartRequestedAt = Date.now()
     setStreamStatus("Joining swarm")
+    addEvent("Torrent join requested")
 
     const torrent = webTorrentClientRef.current.add(joinMagnetUri.trim(), {
-      announce: trackers,
+      announce: trackerUrls,
     })
     streamTorrentRef.current = torrent
 
+    addEvent(`InfoHash: ${torrent.infoHash || "pending"}`)
+
+    const metadataTimeout = setTimeout(() => {
+      if (!torrent.metadata) {
+        setStreamStatus("Error")
+        addEvent("! Metadata timeout after 25s (tracker/peer discovery issue)")
+      }
+    }, 25_000)
+
+    torrent.on("warning", (err) => {
+      addEvent(`! Torrent warning: ${err.message}`)
+    })
+
+    torrent.on("error", (err) => {
+      setStreamStatus("Error")
+      addEvent(`! Torrent error: ${err.message}`)
+    })
+
+    torrent.on("noPeers", (announceType) => {
+      addEvent(`! No peers from ${announceType || "announce"} yet`)
+    })
+
+    torrent.on("wire", () => {
+      addEvent(`Wire connected. Swarm peers: ${torrent.numPeers}`)
+    })
+
     torrent.on("ready", () => {
+      clearTimeout(metadataTimeout)
       const videoFile =
         torrent.files.find((file) => file.name.toLowerCase().endsWith(".mp4")) ||
         torrent.files.find((file) => file.name.toLowerCase().endsWith(".webm")) ||
@@ -309,6 +341,11 @@ function App() {
       addEvent(`Streaming: ${videoFile.name}`)
       setStreamStatus("Streaming")
       videoFile.renderTo(videoRef.current)
+    })
+
+    torrent.on("metadata", () => {
+      clearTimeout(metadataTimeout)
+      addEvent(`Metadata received. Files: ${torrent.files.length}`)
     })
 
     let lastTickAt = Date.now()

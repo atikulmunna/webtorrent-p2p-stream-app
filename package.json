@@ -1,0 +1,27 @@
+{
+  "name": "webtorrent-p2p-stream-app",
+  "version": "1.0.0",
+  "description": "Browser-based P2P video streaming app spec and execution plan using WebTorrent + WebRTC.",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n server,client -c cyan,green \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "start": "npm run start --prefix server"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/atikulmunna/webtorrent-p2p-stream-app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/atikulmunna/webtorrent-p2p-stream-app/issues"
+  },
+  "homepage": "https://github.com/atikulmunna/webtorrent-p2p-stream-app#readme",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

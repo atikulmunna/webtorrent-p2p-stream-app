@@ -1,0 +1,2 @@
+PORT=4000
+CLIENT_ORIGIN=http://localhost:5173

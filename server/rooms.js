@@ -1,0 +1,65 @@
+const rooms = new Map()
+
+function ensureRoom(roomId, hostClientId = null) {
+  if (!rooms.has(roomId)) {
+    rooms.set(roomId, {
+      roomId,
+      hostClientId,
+      peers: new Map(),
+      createdAt: Date.now(),
+    })
+  }
+
+  const room = rooms.get(roomId)
+  if (hostClientId && !room.hostClientId) {
+    room.hostClientId = hostClientId
+  }
+
+  return room
+}
+
+function addPeer(roomId, peer) {
+  const room = ensureRoom(roomId)
+  room.peers.set(peer.clientId, {
+    clientId: peer.clientId,
+    displayName: peer.displayName || "Guest",
+    joinedAt: Date.now(),
+  })
+  return room
+}
+
+function removePeer(roomId, clientId) {
+  const room = rooms.get(roomId)
+  if (!room) return null
+
+  room.peers.delete(clientId)
+  if (room.peers.size === 0) {
+    rooms.delete(roomId)
+    return null
+  }
+
+  if (room.hostClientId === clientId) {
+    const firstPeer = room.peers.values().next().value
+    room.hostClientId = firstPeer ? firstPeer.clientId : null
+  }
+
+  return room
+}
+
+function getRoom(roomId) {
+  return rooms.get(roomId) || null
+}
+
+function listPeers(roomId) {
+  const room = rooms.get(roomId)
+  if (!room) return []
+  return Array.from(room.peers.values())
+}
+
+module.exports = {
+  addPeer,
+  ensureRoom,
+  getRoom,
+  listPeers,
+  removePeer,
+}

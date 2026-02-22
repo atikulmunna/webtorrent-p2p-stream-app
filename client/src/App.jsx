@@ -4,6 +4,25 @@ import "./App.css"
 
 function App() {
   const signalingUrl = import.meta.env.VITE_SIGNALING_URL || "http://localhost:4000"
+  const forceTurnOnly = import.meta.env.VITE_FORCE_TURN === "1"
+  const stunUrls = useMemo(
+    () =>
+      (import.meta.env.VITE_STUN_URLS || "stun:stun.l.google.com:19302")
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean),
+    [],
+  )
+  const turnUrls = useMemo(
+    () =>
+      (import.meta.env.VITE_TURN_URLS || "")
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean),
+    [],
+  )
+  const turnUsername = import.meta.env.VITE_TURN_USERNAME || ""
+  const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL || ""
   const clientId = useMemo(() => crypto.randomUUID(), [])
   const trackers = useMemo(
     () => [
@@ -38,6 +57,24 @@ function App() {
   const applyingRemotePlaybackRef = useRef(false)
   const lastSyncEmitAtRef = useRef(0)
   const playbackRateResetTimerRef = useRef(null)
+  const rtcConfig = useMemo(() => {
+    const iceServers = []
+
+    stunUrls.forEach((url) => {
+      iceServers.push({ urls: url })
+    })
+    turnUrls.forEach((url) => {
+      const turnServer = { urls: url }
+      if (turnUsername) turnServer.username = turnUsername
+      if (turnCredential) turnServer.credential = turnCredential
+      iceServers.push(turnServer)
+    })
+
+    return {
+      iceServers,
+      iceTransportPolicy: forceTurnOnly ? "relay" : "all",
+    }
+  }, [forceTurnOnly, stunUrls, turnUrls, turnUsername, turnCredential])
   const metricsRef = useRef({
     streamStartRequestedAt: 0,
     firstFrameAt: 0,
@@ -141,9 +178,16 @@ function App() {
       return
     }
 
-    const client = new window.WebTorrent()
+    const client = new window.WebTorrent({
+      tracker: {
+        rtcConfig,
+      },
+    })
     webTorrentClientRef.current = client
     setWebTorrentReady(true)
+    addEvent(
+      `RTC mode: ${forceTurnOnly ? "FORCED TURN relay" : "Auto direct + TURN fallback"} | STUN ${stunUrls.length} | TURN ${turnUrls.length}`,
+    )
 
     client.on("error", (err) => {
       setEvents((prev) => [`! WebTorrent error: ${err.message}`, ...prev].slice(0, 8))
@@ -159,7 +203,7 @@ function App() {
         webTorrentClientRef.current = null
       }
     }
-  }, [])
+  }, [forceTurnOnly, rtcConfig, stunUrls.length, turnUrls.length])
 
   const createRoom = () => {
     if (!roomId.trim()) return
@@ -483,6 +527,9 @@ function App() {
         torrentProgressPct,
         downloadKbps,
         peerCount: peers.length,
+        rtcMode: forceTurnOnly ? "relay-only" : "auto",
+        rtcStunServers: stunUrls.length,
+        rtcTurnServers: turnUrls.length,
       },
     }
 
@@ -620,6 +667,9 @@ function App() {
           <strong className={Math.abs(syncDriftSec) > 1 ? "drift-bad" : "drift-ok"}>
             {syncDriftSec.toFixed(2)}s
           </strong>
+        </p>
+        <p>
+          RTC mode: <strong>{forceTurnOnly ? "FORCED TURN relay" : "Auto direct + TURN fallback"}</strong>
         </p>
         <p>
           Download: <strong>{downloadKbps} kbps</strong> | Torrent progress:{" "}

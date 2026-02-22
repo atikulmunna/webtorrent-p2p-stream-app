@@ -56,6 +56,10 @@ npm run dev
 
 - Client env template: `client/.env.example`
 - Server env template: `server/.env.example`
+- TURN/STUN client vars:
+  - `VITE_STUN_URLS` (comma-separated STUN URLs)
+  - `VITE_TURN_URLS`, `VITE_TURN_USERNAME`, `VITE_TURN_CREDENTIAL`
+  - `VITE_FORCE_TURN=1` to force relay-only mode during fallback tests
 
 ## Next Build Target
 
@@ -70,6 +74,7 @@ npm run dev
 3. In browser tab B (guest), join same room, paste magnet, click `Start Streaming`.
 4. Run for at least 10 minutes.
 5. Click `Generate Validation Report`, then `Export Report JSON`.
+6. For TURN fallback verification, set `VITE_FORCE_TURN=1`, restart client, and repeat.
 
 The report includes:
 - `ttffMs` (time to first frame)

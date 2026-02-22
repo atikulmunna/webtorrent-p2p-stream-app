@@ -63,6 +63,14 @@ ul {
   border-radius: 10px;
 }
 
+.drift-ok {
+  color: #0a7a2f;
+}
+
+.drift-bad {
+  color: #ad1e1e;
+}
+
 @media (max-width: 768px) {
   .grid {
     grid-template-columns: 1fr;

@@ -26,6 +26,7 @@ function App() {
   const [streamStatus, setStreamStatus] = useState("Idle")
   const [currentTorrentName, setCurrentTorrentName] = useState("")
   const [isHostRole, setIsHostRole] = useState(false)
+  const [syncDriftSec, setSyncDriftSec] = useState(0)
   const socketRef = useRef(null)
   const webTorrentClientRef = useRef(null)
   const seedTorrentRef = useRef(null)
@@ -33,6 +34,7 @@ function App() {
   const videoRef = useRef(null)
   const applyingRemotePlaybackRef = useRef(false)
   const lastSyncEmitAtRef = useRef(0)
+  const playbackRateResetTimerRef = useRef(null)
 
   const addEvent = (text) => {
     setEvents((prev) => [text, ...prev].slice(0, 10))
@@ -69,9 +71,14 @@ function App() {
 
   const resetStreamingSession = () => {
     destroyTorrentSafely(streamTorrentRef)
+    if (playbackRateResetTimerRef.current) {
+      clearTimeout(playbackRateResetTimerRef.current)
+      playbackRateResetTimerRef.current = null
+    }
     clearVideoElement()
     setCurrentTorrentName("")
     setStreamStatus("Idle")
+    setSyncDriftSec(0)
   }
 
   useEffect(() => {
@@ -284,11 +291,53 @@ function App() {
       }, 80)
     }
 
+    const onPlaybackSync = (payload) => {
+      if (!videoRef.current || isHostRole || payload?.roomId !== activeRoom) return
+      if (typeof payload.mediaTimeSec !== "number") return
+
+      const nowMs = Date.now()
+      const networkOffsetSec =
+        typeof payload.hostNowMs === "number" ? Math.max(0, (nowMs - payload.hostNowMs) / 1000) : 0
+      const targetTimeSec = payload.mediaTimeSec + networkOffsetSec
+      const localTimeSec = videoRef.current.currentTime || 0
+      const driftSec = targetTimeSec - localTimeSec
+      setSyncDriftSec(driftSec)
+
+      const absDrift = Math.abs(driftSec)
+      if (absDrift > 1.0) {
+        applyingRemotePlaybackRef.current = true
+        videoRef.current.currentTime = targetTimeSec
+        videoRef.current.playbackRate = 1.0
+        addEvent(`Hard sync: ${driftSec.toFixed(2)}s`)
+        setTimeout(() => {
+          applyingRemotePlaybackRef.current = false
+        }, 80)
+        return
+      }
+
+      if (absDrift > 0.2) {
+        const tunedRate = Math.min(1.05, Math.max(0.95, 1 + driftSec * 0.08))
+        videoRef.current.playbackRate = tunedRate
+        if (playbackRateResetTimerRef.current) {
+          clearTimeout(playbackRateResetTimerRef.current)
+        }
+        playbackRateResetTimerRef.current = setTimeout(() => {
+          if (videoRef.current) videoRef.current.playbackRate = 1.0
+          playbackRateResetTimerRef.current = null
+        }, 1200)
+        return
+      }
+
+      videoRef.current.playbackRate = 1.0
+    }
+
     s.on("playback:state", onPlaybackState)
     s.on("playback:seek", onPlaybackSeek)
+    s.on("playback:sync", onPlaybackSync)
     return () => {
       s.off("playback:state", onPlaybackState)
       s.off("playback:seek", onPlaybackSeek)
+      s.off("playback:sync", onPlaybackSync)
     }
   }, [activeRoom, isHostRole])
 
@@ -346,6 +395,10 @@ function App() {
     return () => {
       destroyTorrentSafely(seedTorrentRef)
       resetStreamingSession()
+      if (playbackRateResetTimerRef.current) {
+        clearTimeout(playbackRateResetTimerRef.current)
+        playbackRateResetTimerRef.current = null
+      }
     }
   }, [])
 
@@ -449,6 +502,12 @@ function App() {
 
       <section className="card">
         <h2>Video Player</h2>
+        <p>
+          Drift vs host:{" "}
+          <strong className={Math.abs(syncDriftSec) > 1 ? "drift-bad" : "drift-ok"}>
+            {syncDriftSec.toFixed(2)}s
+          </strong>
+        </p>
         <video ref={videoRef} controls playsInline className="video" />
       </section>
 

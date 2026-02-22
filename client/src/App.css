@@ -71,6 +71,17 @@ ul {
   color: #ad1e1e;
 }
 
+.report {
+  margin-top: 0.8rem;
+  background: #0f1724;
+  color: #d6e0ef;
+  border-radius: 8px;
+  padding: 0.8rem;
+  overflow: auto;
+  max-height: 280px;
+  font-size: 0.85rem;
+}
+
 @media (max-width: 768px) {
   .grid {
     grid-template-columns: 1fr;

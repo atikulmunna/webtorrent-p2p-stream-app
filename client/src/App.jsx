@@ -27,6 +27,9 @@ function App() {
   const [currentTorrentName, setCurrentTorrentName] = useState("")
   const [isHostRole, setIsHostRole] = useState(false)
   const [syncDriftSec, setSyncDriftSec] = useState(0)
+  const [downloadKbps, setDownloadKbps] = useState(0)
+  const [torrentProgressPct, setTorrentProgressPct] = useState(0)
+  const [validationReport, setValidationReport] = useState(null)
   const socketRef = useRef(null)
   const webTorrentClientRef = useRef(null)
   const seedTorrentRef = useRef(null)
@@ -35,6 +38,14 @@ function App() {
   const applyingRemotePlaybackRef = useRef(false)
   const lastSyncEmitAtRef = useRef(0)
   const playbackRateResetTimerRef = useRef(null)
+  const metricsRef = useRef({
+    streamStartRequestedAt: 0,
+    firstFrameAt: 0,
+    waitingSince: 0,
+    rebufferCount: 0,
+    rebufferTotalMs: 0,
+    driftSamples: [],
+  })
 
   const addEvent = (text) => {
     setEvents((prev) => [text, ...prev].slice(0, 10))
@@ -79,6 +90,20 @@ function App() {
     setCurrentTorrentName("")
     setStreamStatus("Idle")
     setSyncDriftSec(0)
+    setDownloadKbps(0)
+    setTorrentProgressPct(0)
+  }
+
+  const resetMetrics = () => {
+    metricsRef.current = {
+      streamStartRequestedAt: 0,
+      firstFrameAt: 0,
+      waitingSince: 0,
+      rebufferCount: 0,
+      rebufferTotalMs: 0,
+      driftSamples: [],
+    }
+    setValidationReport(null)
   }
 
   useEffect(() => {
@@ -215,6 +240,8 @@ function App() {
   const startStreamingFromMagnet = () => {
     if (!joinMagnetUri.trim() || !webTorrentClientRef.current) return
     resetStreamingSession()
+    resetMetrics()
+    metricsRef.current.streamStartRequestedAt = Date.now()
     setStreamStatus("Joining swarm")
 
     const torrent = webTorrentClientRef.current.add(joinMagnetUri.trim(), {
@@ -240,9 +267,16 @@ function App() {
       videoFile.renderTo(videoRef.current)
     })
 
-    torrent.on("download", () => {
+    let lastTickAt = Date.now()
+    torrent.on("download", (bytes) => {
+      const now = Date.now()
+      const dtSec = Math.max((now - lastTickAt) / 1000, 0.001)
+      lastTickAt = now
+      setDownloadKbps(Math.round((bytes * 8) / 1000 / dtSec))
       if (torrent.progress > 0) {
-        setStreamStatus(`Streaming (${Math.round(torrent.progress * 100)}%)`)
+        const pct = Math.round(torrent.progress * 100)
+        setTorrentProgressPct(pct)
+        setStreamStatus(`Streaming (${pct}%)`)
       }
     })
   }
@@ -302,6 +336,10 @@ function App() {
       const localTimeSec = videoRef.current.currentTime || 0
       const driftSec = targetTimeSec - localTimeSec
       setSyncDriftSec(driftSec)
+      metricsRef.current.driftSamples.push(driftSec)
+      if (metricsRef.current.driftSamples.length > 600) {
+        metricsRef.current.driftSamples.shift()
+      }
 
       const absDrift = Math.abs(driftSec)
       if (absDrift > 1.0) {
@@ -378,18 +416,93 @@ function App() {
       })
     }
 
+    const onPlaying = () => {
+      const now = Date.now()
+      if (!metricsRef.current.firstFrameAt && metricsRef.current.streamStartRequestedAt) {
+        metricsRef.current.firstFrameAt = now
+      }
+      if (metricsRef.current.waitingSince) {
+        metricsRef.current.rebufferTotalMs += now - metricsRef.current.waitingSince
+        metricsRef.current.waitingSince = 0
+      }
+    }
+
+    const onWaiting = () => {
+      if (el.currentTime <= 0.2) return
+      if (!metricsRef.current.waitingSince) {
+        metricsRef.current.waitingSince = Date.now()
+        metricsRef.current.rebufferCount += 1
+      }
+    }
+
     el.addEventListener("play", onPlay)
+    el.addEventListener("playing", onPlaying)
+    el.addEventListener("waiting", onWaiting)
     el.addEventListener("pause", onPause)
     el.addEventListener("seeked", onSeeked)
     el.addEventListener("timeupdate", onTimeUpdate)
 
     return () => {
       el.removeEventListener("play", onPlay)
+      el.removeEventListener("playing", onPlaying)
+      el.removeEventListener("waiting", onWaiting)
       el.removeEventListener("pause", onPause)
       el.removeEventListener("seeked", onSeeked)
       el.removeEventListener("timeupdate", onTimeUpdate)
     }
   }, [activeRoom, isHostRole])
+
+  const buildValidationReport = () => {
+    const now = Date.now()
+    const el = videoRef.current
+    const ttffMs =
+      metricsRef.current.streamStartRequestedAt && metricsRef.current.firstFrameAt
+        ? metricsRef.current.firstFrameAt - metricsRef.current.streamStartRequestedAt
+        : null
+    const sessionPlaybackSec = el ? Number(el.currentTime.toFixed(2)) : 0
+    const rebufferRatioPct =
+      sessionPlaybackSec > 0
+        ? Number(((metricsRef.current.rebufferTotalMs / 1000 / sessionPlaybackSec) * 100).toFixed(2))
+        : 0
+    const driftAbs = metricsRef.current.driftSamples.map((x) => Math.abs(x)).sort((a, b) => a - b)
+    const driftP95 = driftAbs.length ? driftAbs[Math.floor(driftAbs.length * 0.95)] : 0
+
+    const report = {
+      generatedAtIso: new Date(now).toISOString(),
+      roomId: activeRoom || null,
+      role: isHostRole ? "host" : "guest",
+      mediaName: currentTorrentName || null,
+      metrics: {
+        ttffMs,
+        sessionPlaybackSec,
+        rebufferCount: metricsRef.current.rebufferCount,
+        rebufferTotalMs: metricsRef.current.rebufferTotalMs,
+        rebufferRatioPct,
+        driftP95Sec: Number(driftP95.toFixed(3)),
+        latestDriftSec: Number(syncDriftSec.toFixed(3)),
+        torrentProgressPct,
+        downloadKbps,
+        peerCount: peers.length,
+      },
+    }
+
+    setValidationReport(report)
+    addEvent("Validation report generated")
+    return report
+  }
+
+  const exportValidationReport = () => {
+    const report = validationReport || buildValidationReport()
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `validation-report-${Date.now()}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
 
   useEffect(() => {
     return () => {
@@ -508,7 +621,18 @@ function App() {
             {syncDriftSec.toFixed(2)}s
           </strong>
         </p>
+        <p>
+          Download: <strong>{downloadKbps} kbps</strong> | Torrent progress:{" "}
+          <strong>{torrentProgressPct}%</strong>
+        </p>
         <video ref={videoRef} controls playsInline className="video" />
+        <div className="actions">
+          <button onClick={buildValidationReport}>Generate Validation Report</button>
+          <button onClick={exportValidationReport}>Export Report JSON</button>
+        </div>
+        {validationReport ? (
+          <pre className="report">{JSON.stringify(validationReport, null, 2)}</pre>
+        ) : null}
       </section>
 
       <section className="grid">

@@ -62,3 +62,17 @@ npm run dev
 1. Complete `M1/M3` DoD validation (repeatable 10-minute stream tests, failure handling).
 2. Implement `M4` TURN relay fallback wiring and forced-relay verification.
 3. Implement `M8` chat reliability + rate limiting and `M14` remaining abuse controls.
+
+## Validation Workflow (M1/M3)
+
+1. Start app with `npm run dev`.
+2. In browser tab A (host), create room, select `.mp4`, click `Create Magnet`.
+3. In browser tab B (guest), join same room, paste magnet, click `Start Streaming`.
+4. Run for at least 10 minutes.
+5. Click `Generate Validation Report`, then `Export Report JSON`.
+
+The report includes:
+- `ttffMs` (time to first frame)
+- `rebufferCount`, `rebufferTotalMs`, `rebufferRatioPct`
+- `driftP95Sec`, `latestDriftSec`
+- `torrentProgressPct`, `downloadKbps`, `peerCount`

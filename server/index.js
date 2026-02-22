@@ -3,7 +3,7 @@ const { randomUUID } = require("crypto")
 const express = require("express")
 const cors = require("cors")
 const { Server } = require("socket.io")
-const { addPeer, ensureRoom, getRoom, listPeers, removePeer } = require("./rooms")
+const { addPeer, ensureRoom, getRoom, isHostClient, listPeers, removePeer } = require("./rooms")
 
 const PORT = process.env.PORT || 4000
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173"
@@ -68,16 +68,31 @@ io.on("connection", (socket) => {
 
   socket.on("playback:state", (payload) => {
     if (!payload?.roomId) return
+    const senderId = socket.data?.clientId
+    if (!senderId || !isHostClient(payload.roomId, senderId)) {
+      socket.emit("room:error", { errorCode: "UNAUTHORIZED", context: "playback:state" })
+      return
+    }
     socket.to(payload.roomId).emit("playback:state", payload)
   })
 
   socket.on("playback:seek", (payload) => {
     if (!payload?.roomId) return
+    const senderId = socket.data?.clientId
+    if (!senderId || !isHostClient(payload.roomId, senderId)) {
+      socket.emit("room:error", { errorCode: "UNAUTHORIZED", context: "playback:seek" })
+      return
+    }
     socket.to(payload.roomId).emit("playback:seek", payload)
   })
 
   socket.on("playback:sync", (payload) => {
     if (!payload?.roomId) return
+    const senderId = socket.data?.clientId
+    if (!senderId || !isHostClient(payload.roomId, senderId)) {
+      socket.emit("room:error", { errorCode: "UNAUTHORIZED", context: "playback:sync" })
+      return
+    }
     socket.to(payload.roomId).emit("playback:sync", payload)
   })
 

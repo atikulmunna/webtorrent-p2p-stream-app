@@ -56,10 +56,17 @@ function listPeers(roomId) {
   return Array.from(room.peers.values())
 }
 
+function isHostClient(roomId, clientId) {
+  const room = rooms.get(roomId)
+  if (!room) return false
+  return room.hostClientId === clientId
+}
+
 module.exports = {
   addPeer,
   ensureRoom,
   getRoom,
+  isHostClient,
   listPeers,
   removePeer,
 }

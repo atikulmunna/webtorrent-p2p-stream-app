@@ -87,6 +87,9 @@ function App() {
     s.on("room:peer-left", (payload) => {
       setEvents((prev) => [`- ${payload.clientId} left`, ...prev].slice(0, 8))
     })
+    s.on("room:error", (payload) => {
+      setEvents((prev) => [`! ${payload.errorCode} (${payload.context})`, ...prev].slice(0, 8))
+    })
     socketRef.current = s
 
     return () => {

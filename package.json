@@ -8,7 +8,8 @@
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
     "build": "npm run build --prefix client",
-    "start": "npm run start --prefix server"
+    "start": "npm run start --prefix server",
+    "validate:report": "node scripts/evaluate-validation-report.js"
   },
   "repository": {
     "type": "git",

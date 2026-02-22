@@ -76,3 +76,22 @@ The report includes:
 - `rebufferCount`, `rebufferTotalMs`, `rebufferRatioPct`
 - `driftP95Sec`, `latestDriftSec`
 - `torrentProgressPct`, `downloadKbps`, `peerCount`
+
+### Evaluate NFR Pass/Fail
+
+Use the built-in validator to compare exported reports against Section 10 NFR thresholds.
+
+```bash
+npm run validate:report -- path\\to\\validation-report-1.json
+```
+
+Multiple reports:
+
+```bash
+npm run validate:report -- path\\to\\report-host.json path\\to\\report-guest.json
+```
+
+Current checks:
+- `ttffMs <= 4000`
+- `rebufferRatioPct <= 3`
+- `driftP95Sec <= 1.0`

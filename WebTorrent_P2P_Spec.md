@@ -367,20 +367,20 @@ Use this matrix as the single execution tracker during implementation. Keep `Sta
 
 | ID | Feature / Work Item | Priority | Primary Socket Events | Test Coverage Anchor | Definition of Done (DoD) | Status |
 |----|----------------------|----------|------------------------|----------------------|--------------------------|--------|
-| M1 | File upload + torrent creation | P0 | N/A (local) | 12.1 #1 | Host can select valid MP4 and magnet is generated in <= 2s for 200MB sample | `TODO` |
-| M2 | Room creation/join/leave flow | P0 | `room:create`, `room:join`, `room:leave`, `room:peer-joined`, `room:peer-left` | 12.1 #2, 12.2 | Two clients can create/join/leave room with correct presence updates and no stale peers | `TODO` |
-| M3 | P2P media streaming | P0 | WebTorrent tracker/peer flow + room presence | 12.1 #2, 12.2 | Guest begins playback and can continue for 10 minutes with no fatal playback error | `TODO` |
+| M1 | File upload + torrent creation | P0 | N/A (local) | 12.1 #1 | Host can select valid MP4 and magnet is generated in <= 2s for 200MB sample | `IN_PROGRESS` |
+| M2 | Room creation/join/leave flow | P0 | `room:create`, `room:join`, `room:leave`, `room:peer-joined`, `room:peer-left` | 12.1 #2, 12.2 | Two clients can create/join/leave room with correct presence updates and no stale peers | `IN_PROGRESS` |
+| M3 | P2P media streaming | P0 | WebTorrent tracker/peer flow + room presence | 12.1 #2, 12.2 | Guest begins playback and can continue for 10 minutes with no fatal playback error | `IN_PROGRESS` |
 | M4 | WebRTC fallback to TURN | P1 | Connection telemetry eventing (client metrics) | 12.2 TURN-only | Forced relay test succeeds and playback remains functional | `TODO` |
-| M5 | Playback controls (host authority) | P1 | `playback:state`, `playback:seek` | 12.1 #3 | Play/pause/seek initiated by host is reflected on guests within p95 latency target | `TODO` |
-| M6 | Sync drift correction loop | P1 | `playback:sync` | 12.1 #3, NFR 10.1 | Drift remains <= 1.0s p95 over 10-minute run | `TODO` |
-| M7 | Peer counter + basic peer list | P1 | `room:peer-joined`, `room:peer-left` | 12.1 #2 | UI peer count always matches server room membership in smoke tests | `TODO` |
+| M5 | Playback controls (host authority) | P1 | `playback:state`, `playback:seek` | 12.1 #3 | Play/pause/seek initiated by host is reflected on guests within p95 latency target | `IN_PROGRESS` |
+| M6 | Sync drift correction loop | P1 | `playback:sync` | 12.1 #3, NFR 10.1 | Drift remains <= 1.0s p95 over 10-minute run | `IN_PROGRESS` |
+| M7 | Peer counter + basic peer list | P1 | `room:peer-joined`, `room:peer-left` | 12.1 #2 | UI peer count always matches server room membership in smoke tests | `IN_PROGRESS` |
 | M8 | Group chat | P2 | `chat:send`, `chat:message` | 12.1 #4 | Messages deliver in-order with validation and rate limiting applied | `TODO` |
 | M9 | Bandwidth and health visualization | P2 | Client metric stream (local + server) | 13.1, 13.2 | Throughput, buffer, drift, and mode (`direct`/`turn-relay`) visible in UI debug panel | `TODO` |
 | M10 | Subtitle upload/render | P2 | N/A (local) | 12.1 #5 | `.vtt` and `.srt` (converted if needed) display correctly on supported browsers | `TODO` |
 | M11 | Tracker failover | P1 | Tracker list fallback logic | 12.2 tracker failover | If primary tracker fails, peer discovery continues via secondary trackers | `TODO` |
 | M12 | Reconnect resilience | P1 | Room rejoin + sync replay | 12.2 reconnect | After 10-20s drop, guest rejoins and resumes playback <= 10s p95 | `TODO` |
-| M13 | Compatibility guardrails | P1 | Error reporting events | 10.3, 12.3 | Unsupported codec/container is blocked with explicit actionable error | `TODO` |
-| M14 | Security controls | P1 | Authorization/rate-limit middleware | 14.1 | Host-only commands enforced server-side; rate limit and payload validation active | `TODO` |
+| M13 | Compatibility guardrails | P1 | Error reporting events | 10.3, 12.3 | Unsupported codec/container is blocked with explicit actionable error | `IN_PROGRESS` |
+| M14 | Security controls | P1 | Authorization/rate-limit middleware | 14.1 | Host-only commands enforced server-side; rate limit and payload validation active | `IN_PROGRESS` |
 | M15 | Observability and logs | P1 | Metrics + error code aggregation | 13.1, 13.2, 13.3 | Required client/server metrics are visible and logs follow retention policy | `TODO` |
 | M16 | Deployment + production smoke test | P0 | End-to-end flow | 12.4 | Public demo URL supports 2-peer streaming scenario successfully | `TODO` |
 

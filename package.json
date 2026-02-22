@@ -9,7 +9,8 @@
     "dev:client": "npm run dev --prefix client",
     "build": "npm run build --prefix client",
     "start": "npm run start --prefix server",
-    "validate:report": "node scripts/evaluate-validation-report.js"
+    "validate:report": "node scripts/evaluate-validation-report.js",
+    "video:normalize": "node scripts/normalize-video.js"
   },
   "repository": {
     "type": "git",

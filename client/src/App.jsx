@@ -56,10 +56,14 @@ function App() {
   const webTorrentClientRef = useRef(null)
   const seedTorrentRef = useRef(null)
   const streamTorrentRef = useRef(null)
+  const currentVideoFileRef = useRef(null)
   const videoRef = useRef(null)
   const applyingRemotePlaybackRef = useRef(false)
   const lastSyncEmitAtRef = useRef(0)
   const playbackRateResetTimerRef = useRef(null)
+  const playbackStartedRef = useRef(false)
+  const stallWatchTimerRef = useRef(null)
+  const reRenderAttemptsRef = useRef(0)
   const rtcConfig = useMemo(() => {
     const iceServers = []
 
@@ -93,7 +97,17 @@ function App() {
 
   const isLikelySupportedMvpVideo = (file) => {
     const lower = file.name.toLowerCase()
-    return lower.endsWith(".mp4")
+    const isMp4 = lower.endsWith(".mp4")
+    const isTypeMp4 = (file.type || "").toLowerCase().includes("mp4")
+    return isMp4 || isTypeMp4
+  }
+
+  const getCompatibilityHint = (file) => {
+    const lower = file.name.toLowerCase()
+    if (!lower.endsWith(".mp4")) {
+      return "Best compatibility: MP4 container with H.264 video + AAC audio."
+    }
+    return "If playback is black/stuck, normalize to H.264/AAC using the convert command in README."
   }
 
   const clearVideoElement = () => {
@@ -122,6 +136,13 @@ function App() {
 
   const resetStreamingSession = () => {
     destroyTorrentSafely(streamTorrentRef)
+    currentVideoFileRef.current = null
+    playbackStartedRef.current = false
+    reRenderAttemptsRef.current = 0
+    if (stallWatchTimerRef.current) {
+      clearTimeout(stallWatchTimerRef.current)
+      stallWatchTimerRef.current = null
+    }
     if (playbackRateResetTimerRef.current) {
       clearTimeout(playbackRateResetTimerRef.current)
       playbackRateResetTimerRef.current = null
@@ -144,6 +165,40 @@ function App() {
       driftSamples: [],
     }
     setValidationReport(null)
+  }
+
+  const renderVideoFile = (videoFile) => {
+    if (!videoRef.current || !videoFile) return
+    currentVideoFileRef.current = videoFile
+    try {
+      videoFile.renderTo(videoRef.current)
+    } catch (err) {
+      setStreamStatus("Error")
+      addEvent(`! Render error: ${err.message}`)
+    }
+  }
+
+  const armPlaybackStallWatch = () => {
+    if (stallWatchTimerRef.current) {
+      clearTimeout(stallWatchTimerRef.current)
+    }
+    stallWatchTimerRef.current = setTimeout(() => {
+      const el = videoRef.current
+      if (!el || playbackStartedRef.current) return
+      if (torrentProgressPct < 90) return
+      if (!currentVideoFileRef.current) return
+
+      if (reRenderAttemptsRef.current >= 1) {
+        addEvent("! Playback stalled after 100%. Likely codec/profile incompatibility.")
+        setStreamStatus("Error")
+        return
+      }
+
+      reRenderAttemptsRef.current += 1
+      addEvent("Playback stalled after high progress; retrying render once")
+      renderVideoFile(currentVideoFileRef.current)
+      armPlaybackStallWatch()
+    }, 8000)
   }
 
   useEffect(() => {
@@ -265,9 +320,10 @@ function App() {
 
     if (!isLikelySupportedMvpVideo(selectedFile)) {
       setStreamStatus("Error")
-      addEvent("! Unsupported file. MVP supports .mp4 (H.264/AAC recommended).")
+      addEvent("! Unsupported file extension/type. Use MP4 with H.264/AAC for reliable playback.")
       return
     }
+    addEvent(getCompatibilityHint(selectedFile))
 
     destroyTorrentSafely(seedTorrentRef)
     setStreamStatus("Creating torrent")
@@ -340,7 +396,8 @@ function App() {
       setCurrentTorrentName(videoFile.name)
       addEvent(`Streaming: ${videoFile.name}`)
       setStreamStatus("Streaming")
-      videoFile.renderTo(videoRef.current)
+      renderVideoFile(videoFile)
+      armPlaybackStallWatch()
     })
 
     torrent.on("metadata", () => {
@@ -358,6 +415,9 @@ function App() {
         const pct = Math.round(torrent.progress * 100)
         setTorrentProgressPct(pct)
         setStreamStatus(`Streaming (${pct}%)`)
+        if (pct >= 95 && !playbackStartedRef.current) {
+          armPlaybackStallWatch()
+        }
       }
     })
   }
@@ -499,6 +559,11 @@ function App() {
 
     const onPlaying = () => {
       const now = Date.now()
+      playbackStartedRef.current = true
+      if (stallWatchTimerRef.current) {
+        clearTimeout(stallWatchTimerRef.current)
+        stallWatchTimerRef.current = null
+      }
       if (!metricsRef.current.firstFrameAt && metricsRef.current.streamStartRequestedAt) {
         metricsRef.current.firstFrameAt = now
       }
@@ -660,6 +725,7 @@ function App() {
               accept="video/mp4,video/webm,video/*"
               onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
             />
+            {selectedFile ? <p>{getCompatibilityHint(selectedFile)}</p> : null}
           </div>
           <div className="actions">
             <button onClick={createTorrentFromFile} disabled={!selectedFile || !webTorrentReady}>

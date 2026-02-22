@@ -109,3 +109,24 @@ Current checks:
 - `ttffMs <= 4000`
 - `rebufferRatioPct <= 3`
 - `driftP95Sec <= 1.0`
+
+## Media Compatibility Workflow
+
+If a file streams audio-only, black frames, or delayed startup, normalize it before upload.
+
+```bash
+npm run video:normalize -- "C:\\path\\to\\input.mp4"
+```
+
+Optional custom output path:
+
+```bash
+npm run video:normalize -- "C:\\path\\to\\input.mp4" "C:\\path\\to\\output_safe.mp4"
+```
+
+Normalization profile:
+- MP4 + H.264 (`yuv420p`)
+- 720p at 30fps
+- AAC stereo (`128k`)
+
+This profile is used as the known-good test input for reproducible M1/M3 validation runs.

@@ -370,7 +370,7 @@ Use this matrix as the single execution tracker during implementation. Keep `Sta
 | M1 | File upload + torrent creation | P0 | N/A (local) | 12.1 #1 | Host can select valid MP4 and magnet is generated in <= 2s for 200MB sample | `IN_PROGRESS` |
 | M2 | Room creation/join/leave flow | P0 | `room:create`, `room:join`, `room:leave`, `room:peer-joined`, `room:peer-left` | 12.1 #2, 12.2 | Two clients can create/join/leave room with correct presence updates and no stale peers | `IN_PROGRESS` |
 | M3 | P2P media streaming | P0 | WebTorrent tracker/peer flow + room presence | 12.1 #2, 12.2 | Guest begins playback and can continue for 10 minutes with no fatal playback error | `IN_PROGRESS` |
-| M4 | WebRTC fallback to TURN | P1 | Connection telemetry eventing (client metrics) | 12.2 TURN-only | Forced relay test succeeds and playback remains functional | `TODO` |
+| M4 | WebRTC fallback to TURN | P1 | Connection telemetry eventing (client metrics) | 12.2 TURN-only | Forced relay test succeeds and playback remains functional | `IN_PROGRESS` |
 | M5 | Playback controls (host authority) | P1 | `playback:state`, `playback:seek` | 12.1 #3 | Play/pause/seek initiated by host is reflected on guests within p95 latency target | `IN_PROGRESS` |
 | M6 | Sync drift correction loop | P1 | `playback:sync` | 12.1 #3, NFR 10.1 | Drift remains <= 1.0s p95 over 10-minute run | `IN_PROGRESS` |
 | M7 | Peer counter + basic peer list | P1 | `room:peer-joined`, `room:peer-left` | 12.1 #2 | UI peer count always matches server room membership in smoke tests | `IN_PROGRESS` |

@@ -24,6 +24,9 @@ function passFail(value, predicate) {
 }
 
 function evaluateReport(reportPath) {
+  if (!fs.existsSync(reportPath)) {
+    throw new Error(`Report file not found: ${reportPath}`)
+  }
   const raw = fs.readFileSync(reportPath, "utf8")
   const parsed = JSON.parse(raw)
   const metrics = parsed.metrics || {}
@@ -64,7 +67,13 @@ function main() {
     process.exit(1)
   }
 
-  const results = files.map((file) => evaluateReport(file))
+  let results
+  try {
+    results = files.map((file) => evaluateReport(file))
+  } catch (err) {
+    console.error(`Validation error: ${err.message}`)
+    process.exit(1)
+  }
 
   console.log("Validation Summary")
   console.log("--------------------------------------------------------------------------")

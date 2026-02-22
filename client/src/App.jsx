@@ -34,6 +34,7 @@ function App() {
   )
   const turnUsername = import.meta.env.VITE_TURN_USERNAME || ""
   const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL || ""
+  const seedPieceLength = 256 * 1024
   const clientId = useMemo(() => crypto.randomUUID(), [])
   const [displayName, setDisplayName] = useState("Host")
   const [roomId, setRoomId] = useState("")
@@ -235,7 +236,7 @@ function App() {
         clearInterval(playRetryTimerRef.current)
         playRetryTimerRef.current = null
       }
-    }, 500)
+    }, 300)
   }
 
   const armPlaybackStallWatch = () => {
@@ -393,7 +394,7 @@ function App() {
     setStreamStatus("Creating torrent")
     webTorrentClientRef.current.seed(
       selectedFile,
-      { announce: trackerUrls, private: false },
+      { announce: trackerUrls, private: false, pieceLength: seedPieceLength },
       (torrent) => {
         seedTorrentRef.current = torrent
         setMagnetUri(torrent.magnetURI)
@@ -446,6 +447,14 @@ function App() {
 
     torrent.on("ready", () => {
       clearTimeout(metadataTimeout)
+      if (typeof torrent.select === "function" && torrent.pieces?.length) {
+        const end = Math.min(1024, torrent.pieces.length - 1)
+        torrent.select(0, end, 10)
+      }
+      if (typeof torrent.critical === "function" && torrent.pieces?.length) {
+        const end = Math.min(64, torrent.pieces.length - 1)
+        torrent.critical(0, end)
+      }
       const videoFile =
         torrent.files.find((file) => file.name.toLowerCase().endsWith(".mp4")) ||
         torrent.files.find((file) => file.name.toLowerCase().endsWith(".webm")) ||
@@ -460,6 +469,9 @@ function App() {
       setCurrentTorrentName(videoFile.name)
       addEvent(`Streaming: ${videoFile.name}`)
       setStreamStatus("Streaming")
+      if (typeof videoFile.select === "function") {
+        videoFile.select()
+      }
       renderVideoFile(videoFile)
       startPlayRetryLoop()
       armPlaybackStallWatch()

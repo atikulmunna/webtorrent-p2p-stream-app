@@ -11,7 +11,8 @@
     "start": "npm run start --prefix server",
     "validate:report": "node scripts/evaluate-validation-report.js",
     "validate:relay": "node scripts/evaluate-validation-report.js --require-relay",
-    "video:normalize": "node scripts/normalize-video.js"
+    "video:normalize": "node scripts/normalize-video.js",
+    "smoke:m8m15": "node scripts/smoke-m8-m15.js"
   },
   "repository": {
     "type": "git",
@@ -26,5 +27,8 @@
   "homepage": "https://github.com/atikulmunna/webtorrent-p2p-stream-app#readme",
   "devDependencies": {
     "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.3"
   }
 }

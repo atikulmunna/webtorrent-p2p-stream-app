@@ -375,8 +375,8 @@ Use this matrix as the single execution tracker during implementation. Keep `Sta
 | M5 | Playback controls (host authority) | P1 | `playback:state`, `playback:seek` | 12.1 #3 | Play/pause/seek initiated by host is reflected on guests within p95 latency target | `IN_PROGRESS` |
 | M6 | Sync drift correction loop | P1 | `playback:sync` | 12.1 #3, NFR 10.1 | Drift remains <= 1.0s p95 over 10-minute run | `IN_PROGRESS` |
 | M7 | Peer counter + basic peer list | P1 | `room:peer-joined`, `room:peer-left` | 12.1 #2 | UI peer count always matches server room membership in smoke tests | `IN_PROGRESS` |
-| M8 | Group chat | P2 | `chat:send`, `chat:message` | 12.1 #4 | Messages deliver in-order with validation and rate limiting applied | `IN_PROGRESS` |
-| M9 | Bandwidth and health visualization | P2 | Client metric stream (local + server) | 13.1, 13.2 | Throughput, buffer, drift, and mode (`direct`/`turn-relay`) visible in UI debug panel | `IN_PROGRESS` |
+| M8 | Group chat | P2 | `chat:send`, `chat:message` | 12.1 #4 | Messages deliver in-order with validation and rate limiting applied | `DONE` |
+| M9 | Bandwidth and health visualization | P2 | Client metric stream (local + server) | 13.1, 13.2 | Throughput, buffer, drift, and mode (`direct`/`turn-relay`) visible in UI debug panel | `DONE` |
 | M10 | Subtitle upload/render | P2 | N/A (local) | 12.1 #5 | `.vtt` and `.srt` (converted if needed) display correctly on supported browsers | `TODO` |
 | M11 | Tracker failover | P1 | Tracker list fallback logic | 12.2 tracker failover | If primary tracker fails, peer discovery continues via secondary trackers | `TODO` |
 | M12 | Reconnect resilience | P1 | Room rejoin + sync replay | 12.2 reconnect | After 10-20s drop, guest rejoins and resumes playback <= 10s p95 | `TODO` |
@@ -402,7 +402,7 @@ Use this matrix as the single execution tracker during implementation. Keep `Sta
 
 ---
 
-*Updated to v1.2 by Codex | February 2026*
+*Updated to v1.4 by Codex | February 2026*
 
 ---
 
@@ -484,4 +484,4 @@ Implement work item: **[M#] <title>**
 
 ---
 
-*Updated to v1.3 by Codex | February 2026*
+*Updated to v1.4 by Codex | February 2026*

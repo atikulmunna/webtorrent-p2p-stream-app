@@ -15,8 +15,8 @@ Browser-based P2P video streaming app spec and execution plan using WebTorrent +
   - `M5` in progress: host playback events (`play/pause/seek`) relay to guests
   - `M6` in progress: guest drift correction from periodic sync events
   - `M7` in progress: peer counter and peer list UI
-  - `M8` in progress: chat send/receive UI wired to socket events
-  - `M9` in progress: live client metrics panel added
+  - `M8` done: chat send/receive with server-side validation and rate limiting
+  - `M9` done: live client/server metrics panel for throughput, drift, and RTC mode
   - `M15` in progress: server `/metrics` endpoint with counters and p95 latencies
   - `M13` in progress: MVP file compatibility guardrails and user errors
   - `M14` in progress: server-side host authorization for playback events
@@ -77,8 +77,8 @@ npm run dev
 ## Next Build Target
 
 1. Complete `M1/M3` DoD validation (repeatable 10-minute stream tests, failure handling).
-2. Implement `M4` TURN relay fallback wiring and forced-relay verification.
-3. Implement `M8` chat reliability + rate limiting and `M14` remaining abuse controls.
+2. Complete `M4` forced-relay verification with stable tracker/peer discovery runs.
+3. Finish `M15` retention policy + logging lifecycle and close `M14` abuse controls.
 
 ## Validation Workflow (M1/M3)
 
@@ -113,6 +113,12 @@ Forced-relay validation (`M4`) requiring TURN relay mode:
 
 ```bash
 npm run validate:relay -- path\\to\\report-host.json path\\to\\report-guest.json
+```
+
+Smoke test for M8/M15 wiring (chat + `/metrics` counters):
+
+```bash
+npm run smoke:m8m15
 ```
 
 Current checks:

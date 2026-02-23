@@ -6,6 +6,7 @@ function ensureRoom(roomId, hostClientId = null) {
       roomId,
       hostClientId,
       peers: new Map(),
+      playbackSnapshot: null,
       createdAt: Date.now(),
     })
   }
@@ -68,6 +69,22 @@ function isRoomMember(roomId, clientId) {
   return room.peers.has(clientId)
 }
 
+function setPlaybackSnapshot(roomId, snapshot) {
+  const room = rooms.get(roomId)
+  if (!room) return null
+  room.playbackSnapshot = {
+    ...snapshot,
+    updatedAt: Date.now(),
+  }
+  return room.playbackSnapshot
+}
+
+function getPlaybackSnapshot(roomId) {
+  const room = rooms.get(roomId)
+  if (!room) return null
+  return room.playbackSnapshot || null
+}
+
 function getRoomCount() {
   return rooms.size
 }
@@ -77,8 +94,10 @@ module.exports = {
   ensureRoom,
   getRoom,
   getRoomCount,
+  getPlaybackSnapshot,
   isHostClient,
   isRoomMember,
   listPeers,
   removePeer,
+  setPlaybackSnapshot,
 }

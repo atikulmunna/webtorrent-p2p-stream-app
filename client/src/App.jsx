@@ -76,6 +76,8 @@ function App() {
   const streamSessionIdRef = useRef(0)
   const streamFailoverAttemptsRef = useRef(0)
   const trackerFailureRef = useRef(new Map())
+  const reconnectPendingRef = useRef(false)
+  const pendingPlaybackSnapshotRef = useRef(null)
   const rtcConfig = useMemo(() => {
     const iceServers = []
 
@@ -105,6 +107,26 @@ function App() {
 
   const addEvent = (text) => {
     setEvents((prev) => [text, ...prev].slice(0, 10))
+  }
+
+  const applyPlaybackSnapshot = (snapshot) => {
+    if (!snapshot || !videoRef.current || isHostRole) return false
+    const el = videoRef.current
+    if (!Number.isFinite(snapshot.mediaTimeSec)) return false
+    const nowMs = Date.now()
+    const networkOffsetSec =
+      typeof snapshot.hostNowMs === "number" ? Math.max(0, (nowMs - snapshot.hostNowMs) / 1000) : 0
+    applyingRemotePlaybackRef.current = true
+    el.currentTime = snapshot.mediaTimeSec + networkOffsetSec
+    if (snapshot.state === "pause") {
+      el.pause()
+    } else {
+      el.play().catch(() => {})
+    }
+    setTimeout(() => {
+      applyingRemotePlaybackRef.current = false
+    }, 80)
+    return true
   }
 
   const extractTrackerUrl = (text) => {
@@ -309,8 +331,41 @@ function App() {
 
   useEffect(() => {
     const s = io(signalingUrl, { autoConnect: true })
-    s.on("connect", () => setStatus("Connected"))
-    s.on("disconnect", () => setStatus("Disconnected"))
+    s.on("connect", () => {
+      setStatus("Connected")
+      if (!reconnectPendingRef.current || !activeRoom) return
+      s.emit(
+        "room:resume",
+        {
+          roomId: activeRoom,
+          clientId,
+          displayName,
+          role: isHostRole ? "host" : "guest",
+        },
+        (ack) => {
+          if (!ack?.ok) {
+            addEvent(`! Resume failed: ${ack?.errorCode || "UNKNOWN"}`)
+            return
+          }
+          reconnectPendingRef.current = false
+          setActiveRoom(ack.roomId)
+          addEvent(`Session resumed for room ${ack.roomId}`)
+          if (!isHostRole && ack.playbackSnapshot) {
+            pendingPlaybackSnapshotRef.current = ack.playbackSnapshot
+          }
+          if (!isHostRole && joinMagnetUri.trim() && !streamTorrentRef.current) {
+            startStreamingFromMagnetWithFailover(null, true)
+          }
+        },
+      )
+    })
+    s.on("disconnect", () => {
+      setStatus("Disconnected")
+      if (activeRoom) {
+        reconnectPendingRef.current = true
+        addEvent("Signaling disconnected; attempting room resume on reconnect")
+      }
+    })
     s.on("room:peers", (payload) => {
       setPeers(payload.peers || [])
     })
@@ -342,7 +397,7 @@ function App() {
       s.disconnect()
       socketRef.current = null
     }
-  }, [signalingUrl])
+  }, [signalingUrl, activeRoom, clientId, displayName, isHostRole, joinMagnetUri])
 
   useEffect(() => {
     if (!window.WebTorrent) {
@@ -403,6 +458,7 @@ function App() {
         }
         setActiveRoom(ack.roomId)
         setIsHostRole(true)
+        reconnectPendingRef.current = false
         addEvent(`Room ${ack.roomId} created`)
       },
     )
@@ -424,6 +480,10 @@ function App() {
         }
         setActiveRoom(ack.roomId)
         setIsHostRole(false)
+        reconnectPendingRef.current = false
+        if (ack.playbackSnapshot) {
+          pendingPlaybackSnapshotRef.current = ack.playbackSnapshot
+        }
         addEvent(`Joined ${ack.roomId}`)
       },
     )
@@ -436,6 +496,8 @@ function App() {
     setPeers([])
     setChatMessages([])
     setIsHostRole(false)
+    reconnectPendingRef.current = false
+    pendingPlaybackSnapshotRef.current = null
     addEvent("Left room")
   }
 
@@ -790,10 +852,20 @@ function App() {
     const onLoadedMeta = () => {
       attemptAutoPlay()
       startPlayRetryLoop()
+      if (pendingPlaybackSnapshotRef.current) {
+        if (applyPlaybackSnapshot(pendingPlaybackSnapshotRef.current)) {
+          pendingPlaybackSnapshotRef.current = null
+        }
+      }
     }
 
     const onCanPlay = () => {
       attemptAutoPlay()
+      if (pendingPlaybackSnapshotRef.current) {
+        if (applyPlaybackSnapshot(pendingPlaybackSnapshotRef.current)) {
+          pendingPlaybackSnapshotRef.current = null
+        }
+      }
     }
 
     el.addEventListener("play", onPlay)

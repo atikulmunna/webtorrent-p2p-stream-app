@@ -13,7 +13,8 @@
     "validate:relay": "node scripts/evaluate-validation-report.js --require-relay",
     "video:normalize": "node scripts/normalize-video.js",
     "smoke:m8m15": "node scripts/smoke-m8-m15.js",
-    "smoke:m14": "node scripts/smoke-m14-security.js"
+    "smoke:m14": "node scripts/smoke-m14-security.js",
+    "smoke:m12": "node scripts/smoke-m12-reconnect.js"
   },
   "repository": {
     "type": "git",

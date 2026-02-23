@@ -379,7 +379,7 @@ Use this matrix as the single execution tracker during implementation. Keep `Sta
 | M9 | Bandwidth and health visualization | P2 | Client metric stream (local + server) | 13.1, 13.2 | Throughput, buffer, drift, and mode (`direct`/`turn-relay`) visible in UI debug panel | `DONE` |
 | M10 | Subtitle upload/render | P2 | N/A (local) | 12.1 #5 | `.vtt` and `.srt` (converted if needed) display correctly on supported browsers | `TODO` |
 | M11 | Tracker failover | P1 | Tracker list fallback logic | 12.2 tracker failover | If primary tracker fails, peer discovery continues via secondary trackers | `IN_PROGRESS` |
-| M12 | Reconnect resilience | P1 | Room rejoin + sync replay | 12.2 reconnect | After 10-20s drop, guest rejoins and resumes playback <= 10s p95 | `TODO` |
+| M12 | Reconnect resilience | P1 | Room rejoin + sync replay | 12.2 reconnect | After 10-20s drop, guest rejoins and resumes playback <= 10s p95 | `IN_PROGRESS` |
 | M13 | Compatibility guardrails | P1 | Error reporting events | 10.3, 12.3 | Unsupported codec/container is blocked with explicit actionable error | `IN_PROGRESS` |
 | M14 | Security controls | P1 | Authorization/rate-limit middleware | 14.1 | Host-only commands enforced server-side; rate limit and payload validation active | `DONE` |
 | M15 | Observability and logs | P1 | Metrics + error code aggregation | 13.1, 13.2, 13.3 | Required client/server metrics are visible and logs follow retention policy | `DONE` |
@@ -402,7 +402,7 @@ Use this matrix as the single execution tracker during implementation. Keep `Sta
 
 ---
 
-*Updated to v1.7 by Codex | February 2026*
+*Updated to v1.8 by Codex | February 2026*
 
 ---
 
@@ -484,4 +484,4 @@ Implement work item: **[M#] <title>**
 
 ---
 
-*Updated to v1.7 by Codex | February 2026*
+*Updated to v1.8 by Codex | February 2026*

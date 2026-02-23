@@ -8,12 +8,14 @@ const { Server } = require("socket.io")
 const {
   addPeer,
   ensureRoom,
+  getPlaybackSnapshot,
   getRoom,
   getRoomCount,
   isHostClient,
   isRoomMember,
   listPeers,
   removePeer,
+  setPlaybackSnapshot,
 } = require("./rooms")
 
 const SERVER_PORT = Number(process.env.SERVER_PORT || process.env.PORT || 4000)
@@ -35,6 +37,8 @@ const metrics = {
     roomCreateFailure: 0,
     roomJoinSuccess: 0,
     roomJoinFailure: 0,
+    roomResumeSuccess: 0,
+    roomResumeFailure: 0,
     roomLeave: 0,
     peerDisconnected: 0,
     playbackStateForwarded: 0,
@@ -354,10 +358,79 @@ io.on("connection", (socket) => {
       joinedAt: Date.now(),
     })
     io.to(roomId).emit("room:peers", { roomId, peers: listPeers(roomId) })
-    ack?.({ ok: true, roomId })
+    ack?.({ ok: true, roomId, playbackSnapshot: getPlaybackSnapshot(roomId) })
     appendLog("info", "room:join", { roomId, clientId: guestClientId })
     incCounter("roomJoinSuccess")
     recordLatency("room:join", startedAt)
+  })
+
+  socket.on("room:resume", ({ roomId, clientId, displayName, role }, ack) => {
+    const startedAt = Date.now()
+    if (!checkRateLimit(socket, "room:resume", 20, 60_000)) {
+      ack?.({ ok: false, errorCode: "RATE_LIMITED" })
+      incCounter("roomResumeFailure")
+      incError("RATE_LIMITED")
+      recordLatency("room:resume", startedAt)
+      return
+    }
+    if (!validateRoomPayload(roomId, clientId)) {
+      ack?.({ ok: false, errorCode: "INVALID_PAYLOAD" })
+      incCounter("roomResumeFailure")
+      incError("INVALID_PAYLOAD")
+      recordLatency("room:resume", startedAt)
+      return
+    }
+    if (!["host", "guest"].includes(role)) {
+      ack?.({ ok: false, errorCode: "INVALID_PAYLOAD" })
+      incCounter("roomResumeFailure")
+      incError("INVALID_PAYLOAD")
+      recordLatency("room:resume", startedAt)
+      return
+    }
+    if (isSocketIdentityConflict(socket, roomId, clientId)) {
+      ack?.({ ok: false, errorCode: "UNAUTHORIZED" })
+      incCounter("roomResumeFailure")
+      incError("UNAUTHORIZED")
+      recordLatency("room:resume", startedAt)
+      return
+    }
+
+    let room = getRoom(roomId)
+    if (!room) {
+      if (role !== "host") {
+        ack?.({ ok: false, errorCode: "ROOM_NOT_FOUND" })
+        incCounter("roomResumeFailure")
+        incError("ROOM_NOT_FOUND")
+        recordLatency("room:resume", startedAt)
+        return
+      }
+      room = ensureRoom(roomId, clientId)
+    }
+
+    if (role === "guest" && room.hostClientId === clientId) {
+      ack?.({ ok: false, errorCode: "UNAUTHORIZED" })
+      incCounter("roomResumeFailure")
+      incError("UNAUTHORIZED")
+      recordLatency("room:resume", startedAt)
+      return
+    }
+    if (role === "host" && room.hostClientId && room.hostClientId !== clientId) {
+      ack?.({ ok: false, errorCode: "UNAUTHORIZED" })
+      incCounter("roomResumeFailure")
+      incError("UNAUTHORIZED")
+      recordLatency("room:resume", startedAt)
+      return
+    }
+
+    addPeer(roomId, { clientId, displayName: normalizeDisplayName(displayName, role === "host" ? "Host" : "Guest") })
+    socket.data = { ...socket.data, roomId, clientId }
+    socket.join(roomId)
+
+    io.to(roomId).emit("room:peers", { roomId, peers: listPeers(roomId) })
+    ack?.({ ok: true, roomId, playbackSnapshot: getPlaybackSnapshot(roomId) })
+    appendLog("info", "room:resume", { roomId, clientId, role })
+    incCounter("roomResumeSuccess")
+    recordLatency("room:resume", startedAt)
   })
 
   socket.on("playback:state", (payload) => {
@@ -383,6 +456,11 @@ io.on("connection", (socket) => {
       return
     }
     socket.to(payload.roomId).emit("playback:state", payload)
+    setPlaybackSnapshot(payload.roomId, {
+      state: payload.state,
+      mediaTimeSec: payload.mediaTimeSec,
+      hostNowMs: payload.sentAtMs || Date.now(),
+    })
     appendLog("info", "playback:state", { roomId: payload.roomId, state: payload.state })
     incCounter("playbackStateForwarded")
     recordLatency("playback:state", startedAt)
@@ -411,6 +489,10 @@ io.on("connection", (socket) => {
       return
     }
     socket.to(payload.roomId).emit("playback:seek", payload)
+    setPlaybackSnapshot(payload.roomId, {
+      mediaTimeSec: payload.mediaTimeSec,
+      hostNowMs: payload.sentAtMs || Date.now(),
+    })
     appendLog("info", "playback:seek", { roomId: payload.roomId, mediaTimeSec: payload.mediaTimeSec })
     incCounter("playbackSeekForwarded")
     recordLatency("playback:seek", startedAt)
@@ -442,6 +524,10 @@ io.on("connection", (socket) => {
       return
     }
     socket.to(payload.roomId).emit("playback:sync", payload)
+    setPlaybackSnapshot(payload.roomId, {
+      mediaTimeSec: payload.mediaTimeSec,
+      hostNowMs: payload.hostNowMs || Date.now(),
+    })
     appendLog("info", "playback:sync", { roomId: payload.roomId, mediaTimeSec: payload.mediaTimeSec })
     incCounter("playbackSyncForwarded")
     recordLatency("playback:sync", startedAt)

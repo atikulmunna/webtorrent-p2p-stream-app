@@ -4,6 +4,7 @@ import {
   computeTrackerFailover,
   extractTrackerUrl,
   getCompatibilityHint,
+  getNormalizeCommand,
   getNormalizeCommandHint,
   isLikelySupportedMvpVideo,
   selectPlayableTorrentFile,
@@ -21,6 +22,10 @@ test("getCompatibilityHint warns non-mp4 and guidance for mp4", () => {
 })
 
 test("getNormalizeCommandHint returns actionable normalize command", () => {
+  assert.equal(
+    getNormalizeCommand("clip.mp4"),
+    'npm run video:normalize -- "clip.mp4"',
+  )
   assert.equal(
     getNormalizeCommandHint("clip.mp4"),
     'Try: npm run video:normalize -- "clip.mp4"',

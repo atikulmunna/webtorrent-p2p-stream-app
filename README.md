@@ -18,6 +18,7 @@ Browser-based P2P video streaming app spec and execution plan using WebTorrent +
   - `M7` done: peer list/count consistency validated by integration smoke
   - `M8` done: chat send/receive with server-side validation and rate limiting
   - `M9` done: live client/server metrics panel for throughput, drift, and RTC mode
+  - `M10` done: subtitle upload/render supports `.vtt` and `.srt` conversion path
   - `M15` done: server observability includes `/metrics` + retained structured `/logs`
   - `M11` done: tracker failover is validated by dead-primary/live-secondary smoke run
   - `M12` done: reconnect path resumes room membership and replays playback snapshot after drop
@@ -88,7 +89,7 @@ npm run dev
 
 1. Execute `M16` public deploy + production smoke evidence.
 2. Keep regression gate green (`npm run verify:all`) before milestone/status changes.
-3. Decide roadmap for remaining optional scope (`M10` subtitles).
+3. Keep `M16` open until deploy evidence is available.
 
 ## Validation Workflow (M1/M3)
 

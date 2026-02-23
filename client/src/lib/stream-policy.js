@@ -14,9 +14,13 @@ export function getCompatibilityHint(file) {
   return "If playback is black/stuck, normalize to H.264/AAC using the convert command in README."
 }
 
-export function getNormalizeCommandHint(fileName = "input.mp4") {
+export function getNormalizeCommand(fileName = "input.mp4") {
   const safeName = String(fileName || "input.mp4")
-  return `Try: npm run video:normalize -- "${safeName}"`
+  return `npm run video:normalize -- "${safeName}"`
+}
+
+export function getNormalizeCommandHint(fileName = "input.mp4") {
+  return `Try: ${getNormalizeCommand(fileName)}`
 }
 
 export function selectPlayableTorrentFile(files) {

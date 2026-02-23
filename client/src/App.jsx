@@ -4,10 +4,12 @@ import {
   computeTrackerFailover,
   extractTrackerUrl,
   getCompatibilityHint,
+  getNormalizeCommand,
   getNormalizeCommandHint,
   isLikelySupportedMvpVideo,
   selectPlayableTorrentFile,
 } from "./lib/stream-policy"
+import { prepareSubtitleTrack } from "./lib/subtitles"
 import "./App.css"
 
 function App() {
@@ -64,6 +66,8 @@ function App() {
   const [syncDriftSec, setSyncDriftSec] = useState(0)
   const [downloadKbps, setDownloadKbps] = useState(0)
   const [torrentProgressPct, setTorrentProgressPct] = useState(0)
+  const [subtitleLabel, setSubtitleLabel] = useState("")
+  const [subtitleError, setSubtitleError] = useState("")
   const [activeTrackerUrls, setActiveTrackerUrls] = useState(trackerUrls)
   const [validationReport, setValidationReport] = useState(null)
   const [serverMetrics, setServerMetrics] = useState(null)
@@ -73,6 +77,8 @@ function App() {
   const streamTorrentRef = useRef(null)
   const currentVideoFileRef = useRef(null)
   const activeBlobUrlRef = useRef(null)
+  const activeSubtitleUrlRef = useRef(null)
+  const subtitleTrackRef = useRef(null)
   const videoRef = useRef(null)
   const applyingRemotePlaybackRef = useRef(false)
   const lastSyncEmitAtRef = useRef(0)
@@ -178,6 +184,59 @@ function App() {
     }
   }
 
+  const clearSubtitleTrack = () => {
+    if (activeSubtitleUrlRef.current) {
+      URL.revokeObjectURL(activeSubtitleUrlRef.current)
+      activeSubtitleUrlRef.current = null
+    }
+    const trackEl = subtitleTrackRef.current
+    if (trackEl) {
+      trackEl.removeAttribute("src")
+      trackEl.label = ""
+      trackEl.default = false
+      trackEl.srclang = "en"
+    }
+    const textTracks = videoRef.current?.textTracks
+    if (textTracks) {
+      for (let i = 0; i < textTracks.length; i += 1) {
+        textTracks[i].mode = "disabled"
+      }
+    }
+    setSubtitleLabel("")
+    setSubtitleError("")
+  }
+
+  const applySubtitleFile = async (file) => {
+    if (!file) return
+    try {
+      const { vttText, label } = await prepareSubtitleTrack(file)
+      clearSubtitleTrack()
+
+      const subtitleBlob = new Blob([vttText], { type: "text/vtt" })
+      const subtitleUrl = URL.createObjectURL(subtitleBlob)
+      activeSubtitleUrlRef.current = subtitleUrl
+
+      const trackEl = subtitleTrackRef.current
+      if (!trackEl) {
+        throw new Error("Subtitle track element unavailable")
+      }
+      trackEl.kind = "subtitles"
+      trackEl.label = label
+      trackEl.srclang = "en"
+      trackEl.default = true
+      trackEl.src = subtitleUrl
+      trackEl.track.mode = "showing"
+
+      setSubtitleLabel(label)
+      setSubtitleError("")
+      addEvent(`Subtitle loaded: ${label}`)
+    } catch (err) {
+      const message = err?.message || "Failed to load subtitle file"
+      setSubtitleError(message)
+      addEvent(`! Subtitle error: ${message}`)
+    }
+  }
+
   const destroyTorrentSafely = (torrentRef) => {
     const torrent = torrentRef.current
     if (!torrent) return
@@ -213,6 +272,7 @@ function App() {
       playbackRateResetTimerRef.current = null
     }
     clearVideoElement()
+    clearSubtitleTrack()
     setCurrentTorrentName("")
     setStreamStatus("Idle")
     setSyncDriftSec(0)
@@ -697,6 +757,17 @@ function App() {
     addEvent("Magnet copied to clipboard")
   }
 
+  const copyNormalizeCommand = async () => {
+    if (!selectedFile) return
+    try {
+      const cmd = getNormalizeCommand(selectedFile.name)
+      await navigator.clipboard.writeText(cmd)
+      addEvent("Normalize command copied to clipboard")
+    } catch {
+      addEvent("! Failed to copy normalize command")
+    }
+  }
+
   const stopStreaming = () => {
     allowAutoResumeStreamRef.current = false
     resetStreamingSession()
@@ -1041,6 +1112,9 @@ function App() {
             <button onClick={createTorrentFromFile} disabled={!selectedFile || !webTorrentReady}>
               Create Magnet
             </button>
+            <button onClick={copyNormalizeCommand} disabled={!selectedFile}>
+              Copy Normalize Command
+            </button>
             <button onClick={copyMagnet} disabled={!magnetUri}>
               Copy Magnet
             </button>
@@ -1088,7 +1162,27 @@ function App() {
           Download: <strong>{downloadKbps} kbps</strong> | Torrent progress:{" "}
           <strong>{torrentProgressPct}%</strong>
         </p>
-        <video ref={videoRef} controls playsInline className="video" />
+        <video ref={videoRef} controls playsInline className="video">
+          <track ref={subtitleTrackRef} kind="subtitles" srcLang="en" />
+        </video>
+        <div className="row">
+          <label htmlFor="subtitleInput">Subtitles (M10: .vtt/.srt)</label>
+          <input
+            id="subtitleInput"
+            type="file"
+            accept=".vtt,.srt,text/vtt,application/x-subrip"
+            onChange={(e) => {
+              const file = e.target.files?.[0] || null
+              if (!file) return
+              void applySubtitleFile(file)
+            }}
+          />
+          {subtitleLabel ? <p>Active subtitle: {subtitleLabel}</p> : <p>No subtitle loaded.</p>}
+          {subtitleError ? <p className="drift-bad">Subtitle error: {subtitleError}</p> : null}
+        </div>
+        <div className="actions">
+          <button onClick={clearSubtitleTrack}>Clear Subtitles</button>
+        </div>
         <div className="actions">
           <button onClick={buildValidationReport}>Generate Validation Report</button>
           <button onClick={exportValidationReport}>Export Report JSON</button>

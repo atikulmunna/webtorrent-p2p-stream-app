@@ -85,6 +85,7 @@ function App() {
   const streamSessionIdRef = useRef(0)
   const streamFailoverAttemptsRef = useRef(0)
   const trackerFailureRef = useRef(new Map())
+  const allowAutoResumeStreamRef = useRef(false)
   const reconnectPendingRef = useRef(false)
   const pendingPlaybackSnapshotRef = useRef(null)
   const rtcConfig = useMemo(() => {
@@ -344,7 +345,12 @@ function App() {
           if (!isHostRole && ack.playbackSnapshot) {
             pendingPlaybackSnapshotRef.current = ack.playbackSnapshot
           }
-          if (!isHostRole && joinMagnetUri.trim() && !streamTorrentRef.current) {
+          if (
+            !isHostRole &&
+            allowAutoResumeStreamRef.current &&
+            joinMagnetUri.trim() &&
+            !streamTorrentRef.current
+          ) {
             startStreamingFromMagnetWithFailover(null, true)
           }
         },
@@ -487,6 +493,7 @@ function App() {
     setPeers([])
     setChatMessages([])
     setIsHostRole(false)
+    allowAutoResumeStreamRef.current = false
     reconnectPendingRef.current = false
     pendingPlaybackSnapshotRef.current = null
     addEvent("Left room")
@@ -534,6 +541,7 @@ function App() {
   }
 
   const startStreamingFromMagnet = () => {
+    allowAutoResumeStreamRef.current = true
     startStreamingFromMagnetWithFailover(null, false)
   }
 
@@ -690,6 +698,7 @@ function App() {
   }
 
   const stopStreaming = () => {
+    allowAutoResumeStreamRef.current = false
     resetStreamingSession()
     addEvent("Stopped active stream session")
   }

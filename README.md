@@ -12,8 +12,9 @@ Browser-based P2P video streaming app spec and execution plan using WebTorrent +
   - `M1` done: host file upload and magnet generation via WebTorrent
   - `M2` done: room create/join/leave with peer presence consistency
   - `M3` done: guest join by magnet and in-browser video render
+  - `M4` done: forced relay fallback validated with relay-only evidence reports
   - `M5` done: host playback controls relay to guests within smoke-validated p95 latency target
-  - `M6` in progress: guest drift correction from periodic sync events (event-forwarding smoke added)
+  - `M6` done: drift correction validated in long-run session with <= 1.0s p95 drift evidence
   - `M7` done: peer list/count consistency validated by integration smoke
   - `M8` done: chat send/receive with server-side validation and rate limiting
   - `M9` done: live client/server metrics panel for throughput, drift, and RTC mode
@@ -85,9 +86,9 @@ npm run dev
 
 ## Next Build Target
 
-1. Complete `M4` forced-relay verification with stable tracker/peer discovery runs.
-2. Complete `M6` drift DoD validation (`<=1.0s` p95 over 10-minute run).
-3. Execute `M16` public deploy + production smoke evidence.
+1. Execute `M16` public deploy + production smoke evidence.
+2. Keep regression gate green (`npm run verify:all`) before milestone/status changes.
+3. Decide roadmap for remaining optional scope (`M10` subtitles).
 
 ## Validation Workflow (M1/M3)
 
@@ -122,6 +123,16 @@ Forced-relay validation (`M4`) requiring TURN relay mode:
 
 ```bash
 npm run validate:relay -- path\\to\\report-host.json path\\to\\report-guest.json
+```
+
+Milestone evidence gates:
+
+```bash
+# M4: relay-only + NFR + guest playback >= 60s
+npm run validate:m4 -- path\\to\\report-host.json path\\to\\report-guest.json
+
+# M6: drift p95 <= 1.0s + guest playback >= 600s + NFR
+npm run validate:m6 -- path\\to\\report-host.json path\\to\\report-guest.json
 ```
 
 

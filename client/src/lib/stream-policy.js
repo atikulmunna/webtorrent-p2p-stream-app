@@ -19,6 +19,27 @@ export function getNormalizeCommandHint(fileName = "input.mp4") {
   return `Try: npm run video:normalize -- "${safeName}"`
 }
 
+export function selectPlayableTorrentFile(files) {
+  if (!Array.isArray(files) || files.length === 0) {
+    return {
+      file: null,
+      errorCode: "NO_FILES",
+      errorMessage: "Torrent has no files.",
+    }
+  }
+
+  const mp4File = files.find((file) => String(file?.name || "").toLowerCase().endsWith(".mp4")) || null
+  if (mp4File) {
+    return { file: mp4File, errorCode: null, errorMessage: null }
+  }
+
+  return {
+    file: null,
+    errorCode: "UNSUPPORTED_CONTAINER",
+    errorMessage: "Required format: MP4 container with H.264 video + AAC audio.",
+  }
+}
+
 export function extractTrackerUrl(text) {
   if (typeof text !== "string") return null
   const match = text.match(/wss?:\/\/[^\s)]+/i)

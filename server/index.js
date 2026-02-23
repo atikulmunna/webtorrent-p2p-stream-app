@@ -31,6 +31,15 @@ const LOG_RETENTION_MS = Number(process.env.LOG_RETENTION_MS || 15 * 60 * 1000)
 const LOG_BUFFER_MAX = Number(process.env.LOG_BUFFER_MAX || 2000)
 const LOG_PRUNE_INTERVAL_MS = Number(process.env.LOG_PRUNE_INTERVAL_MS || 30 * 1000)
 
+function parseAllowedOrigins(raw) {
+  return String(raw || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean)
+}
+
+const allowedOrigins = parseAllowedOrigins(CLIENT_ORIGIN)
+
 const metrics = {
   counters: {
     roomCreateSuccess: 0,
@@ -166,7 +175,21 @@ function isAuthorizedRoomMember(socket, roomId) {
 }
 
 const app = express()
-app.use(cors({ origin: CLIENT_ORIGIN }))
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true)
+        return
+      }
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true)
+        return
+      }
+      callback(new Error("CORS_ORIGIN_NOT_ALLOWED"))
+    },
+  }),
+)
 app.use(express.json())
 
 app.get("/health", (_req, res) => {
@@ -217,7 +240,7 @@ app.get("/logs", (req, res) => {
 const server = http.createServer(app)
 const io = new Server(server, {
   cors: {
-    origin: CLIENT_ORIGIN,
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
   },
 })
@@ -609,8 +632,8 @@ io.on("connection", (socket) => {
 
 server.listen(SERVER_PORT, () => {
   console.log(`Signaling server listening on http://localhost:${SERVER_PORT}`)
-  console.log(`Allowed client origin: ${CLIENT_ORIGIN}`)
-  appendLog("info", "server:listening", { port: SERVER_PORT, clientOrigin: CLIENT_ORIGIN })
+  console.log(`Allowed client origins: ${allowedOrigins.join(", ")}`)
+  appendLog("info", "server:listening", { port: SERVER_PORT, clientOrigins: allowedOrigins })
 })
 
 startWebTorrentTracker()

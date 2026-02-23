@@ -12,12 +12,14 @@
     "start": "npm run start --prefix server",
     "validate:report": "node scripts/evaluate-validation-report.js",
     "validate:relay": "node scripts/evaluate-validation-report.js --require-relay",
+    "validate:prod-smoke": "node scripts/validate-production-smoke.js",
     "video:normalize": "node scripts/normalize-video.js",
     "smoke:m2m5m6m7": "node scripts/smoke-m2-m5-m6-m7.js",
+    "smoke:m11": "node scripts/smoke-m11-tracker-failover.js",
     "smoke:m8m15": "node scripts/smoke-m8-m15.js",
     "smoke:m14": "node scripts/smoke-m14-security.js",
     "smoke:m12": "node scripts/smoke-m12-reconnect.js",
-    "smoke:all": "npm run smoke:m2m5m6m7 && npm run smoke:m8m15 && npm run smoke:m14 && npm run smoke:m12",
+    "smoke:all": "npm run smoke:m2m5m6m7 && npm run smoke:m11 && npm run smoke:m8m15 && npm run smoke:m14 && npm run smoke:m12",
     "verify:all": "npm run test:policy && npm run build --prefix client && npm run smoke:all"
   },
   "repository": {
@@ -35,6 +37,8 @@
     "concurrently": "^9.2.1"
   },
   "dependencies": {
-    "socket.io-client": "^4.8.3"
+    "bittorrent-tracker": "^11.2.2",
+    "socket.io-client": "^4.8.3",
+    "webtorrent": "^2.8.5"
   }
 }

@@ -6,6 +6,7 @@ import {
   getCompatibilityHint,
   getNormalizeCommandHint,
   isLikelySupportedMvpVideo,
+  selectPlayableTorrentFile,
 } from "../src/lib/stream-policy.js"
 
 test("isLikelySupportedMvpVideo accepts mp4 by extension or MIME", () => {
@@ -60,4 +61,15 @@ test("computeTrackerFailover increments failure count and quarantines at thresho
   assert.equal(second.quarantined, true)
   assert.deepEqual(second.nextTrackers, ["ws://local", "wss://backup"])
   assert.equal(second.nextFailureMap.get("wss://primary"), 2)
+})
+
+test("selectPlayableTorrentFile accepts mp4 and blocks unsupported containers", () => {
+  const ok = selectPlayableTorrentFile([{ name: "movie.webm" }, { name: "movie.mp4" }])
+  assert.equal(ok.file?.name, "movie.mp4")
+  assert.equal(ok.errorCode, null)
+
+  const blocked = selectPlayableTorrentFile([{ name: "movie.webm" }, { name: "movie.mkv" }])
+  assert.equal(blocked.file, null)
+  assert.equal(blocked.errorCode, "UNSUPPORTED_CONTAINER")
+  assert.match(blocked.errorMessage, /Required format/i)
 })

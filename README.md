@@ -18,10 +18,11 @@ Browser-based P2P video streaming app spec and execution plan using WebTorrent +
   - `M8` done: chat send/receive with server-side validation and rate limiting
   - `M9` done: live client/server metrics panel for throughput, drift, and RTC mode
   - `M15` done: server observability includes `/metrics` + retained structured `/logs`
-  - `M11` in progress: tracker failover retries/quarantine logic added to stream join flow
+  - `M11` done: tracker failover is validated by dead-primary/live-secondary smoke run
   - `M12` done: reconnect path resumes room membership and replays playback snapshot after drop
-  - `M13` in progress: MVP file compatibility guardrails and user errors
+  - `M13` done: unsupported container paths are blocked with explicit actionable normalize guidance
   - `M14` done: host authorization + identity/membership abuse controls are enforced server-side
+  - `M16` in progress: CI deployment gate + production smoke validation tooling added
 - Project specification and execution matrix live in `WebTorrent_P2P_Spec.md`.
 
 ## Implementation Changelog
@@ -86,7 +87,7 @@ npm run dev
 
 1. Complete `M4` forced-relay verification with stable tracker/peer discovery runs.
 2. Complete `M6` drift DoD validation (`<=1.0s` p95 over 10-minute run).
-3. Complete `M11`/`M13`, then execute `M16` deploy + public smoke.
+3. Execute `M16` public deploy + production smoke evidence.
 
 ## Validation Workflow (M1/M3)
 
@@ -123,10 +124,22 @@ Forced-relay validation (`M4`) requiring TURN relay mode:
 npm run validate:relay -- path\\to\\report-host.json path\\to\\report-guest.json
 ```
 
+Production smoke validator (`M16`, requires >= 300s guest playback):
+
+```bash
+npm run validate:prod-smoke -- path\\to\\report-host.json path\\to\\report-guest.json
+```
+
 Smoke test for M8/M15 wiring (chat + `/metrics` counters):
 
 ```bash
 npm run smoke:m8m15
+```
+
+Smoke test for M11 tracker failover (dead primary tracker + healthy secondary):
+
+```bash
+npm run smoke:m11
 ```
 
 Smoke test for M2/M5/M6/M7 core room/playback flows:
@@ -158,6 +171,8 @@ Full local verification gate (required before progressing milestones):
 ```bash
 npm run verify:all
 ```
+
+Deployment checklist for `M16`: see `DEPLOYMENT.md`.
 
 Current checks:
 - `ttffMs <= 6000` (baseline), with `<= 4000` as stretch goal

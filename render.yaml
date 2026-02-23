@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: webtorrent-p2p-signaling
+    runtime: node
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: SERVER_PORT
+        value: 10000
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: TRACKER_WS_PORT
+        value: 8000
+      - key: LOG_RETENTION_MS
+        value: 900000
+      - key: LOG_BUFFER_MAX
+        value: 2000
+      - key: LOG_PRUNE_INTERVAL_MS
+        value: 30000

@@ -6,6 +6,7 @@ import {
   getCompatibilityHint,
   getNormalizeCommandHint,
   isLikelySupportedMvpVideo,
+  selectPlayableTorrentFile,
 } from "./lib/stream-policy"
 import "./App.css"
 
@@ -633,14 +634,12 @@ function App() {
         const end = Math.min(64, torrent.pieces.length - 1)
         torrent.critical(0, end)
       }
-      const videoFile =
-        torrent.files.find((file) => file.name.toLowerCase().endsWith(".mp4")) ||
-        torrent.files.find((file) => file.name.toLowerCase().endsWith(".webm")) ||
-        null
-
+      const selection = selectPlayableTorrentFile(torrent.files)
+      const videoFile = selection.file
       if (!videoFile) {
-        addEvent("! No supported file found. MVP supports .mp4 or .webm stream inputs.")
-        addEvent("! Host should use MP4 H.264/AAC source.")
+        addEvent(`! COMPATIBILITY_ERROR: ${selection.errorCode || "UNSUPPORTED_MEDIA"}`)
+        addEvent(`! ${selection.errorMessage || "Unsupported media payload."}`)
+        addEvent(`! ${getNormalizeCommandHint("input.mp4")}`)
         setStreamStatus("Error")
         return
       }
@@ -1024,7 +1023,7 @@ function App() {
             <input
               id="fileInput"
               type="file"
-              accept="video/mp4,video/webm,video/*"
+              accept="video/mp4,.mp4"
               onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
             />
             {selectedFile ? <p>{getCompatibilityHint(selectedFile)}</p> : null}

@@ -34,6 +34,7 @@ function App() {
   )
   const turnUsername = import.meta.env.VITE_TURN_USERNAME || ""
   const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL || ""
+  const streamStrategy = import.meta.env.VITE_STREAM_STRATEGY || "sequential"
   const trackerFailThreshold = Number(import.meta.env.VITE_TRACKER_FAIL_THRESHOLD || 2)
   const seedPieceLength = 256 * 1024
   const clientId = useMemo(() => crypto.randomUUID(), [])
@@ -559,10 +560,12 @@ function App() {
 
     setStreamStatus("Joining swarm")
     addEvent("Torrent join requested")
+    addEvent(`Stream strategy: ${streamStrategy}`)
     addEvent(`Attempt ${streamFailoverAttemptsRef.current + 1}: ${announceTrackers.length} tracker(s)`)
 
     const torrent = webTorrentClientRef.current.add(joinMagnetUri.trim(), {
       announce: announceTrackers,
+      strategy: streamStrategy,
     })
     streamTorrentRef.current = torrent
 

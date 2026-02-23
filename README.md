@@ -69,6 +69,7 @@ npm run dev
   - `VITE_SIGNALING_URL` should match server port (for example `http://localhost:4000`)
   - `VITE_TRACKER_URLS` (comma-separated tracker announce URLs; local tracker first is recommended)
   - `VITE_TRACKER_FAIL_THRESHOLD` errors before a tracker is quarantined during failover retry
+  - `VITE_STREAM_STRATEGY` WebTorrent add strategy (recommended: `sequential` for earlier playback start)
   - `VITE_STUN_URLS` (comma-separated STUN URLs)
   - `VITE_TURN_URLS`, `VITE_TURN_USERNAME`, `VITE_TURN_CREDENTIAL`
   - `VITE_FORCE_TURN=1` to force relay-only mode during fallback tests

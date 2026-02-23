@@ -40,6 +40,24 @@ function onceWithTimeout(socket, event, timeoutMs = 5000) {
   })
 }
 
+async function stopProcess(child) {
+  if (!child || child.killed) return
+  await new Promise((resolve) => {
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      resolve()
+    }
+    child.once("exit", finish)
+    child.kill("SIGTERM")
+    setTimeout(() => {
+      if (!done) child.kill("SIGKILL")
+    }, 1500)
+    setTimeout(finish, 4000)
+  })
+}
+
 async function run() {
   const serverProcess = spawn("node", ["index.js"], {
     cwd: path.resolve(__dirname, "..", "server"),
@@ -55,11 +73,13 @@ async function run() {
   serverProcess.stdout.on("data", () => {})
   serverProcess.stderr.on("data", () => {})
 
+  let host
+  let guest
   try {
     await waitForServer()
 
-    const host = io(BASE_URL, { transports: ["websocket"], timeout: 5000 })
-    const guest = io(BASE_URL, { transports: ["websocket"], timeout: 5000 })
+    host = io(BASE_URL, { transports: ["websocket"], timeout: 5000, reconnection: false })
+    guest = io(BASE_URL, { transports: ["websocket"], timeout: 5000, reconnection: false })
     await Promise.all([onceWithTimeout(host, "connect"), onceWithTimeout(guest, "connect")])
 
     const roomId = `smoke-${Date.now()}`
@@ -127,7 +147,9 @@ async function run() {
     guest.disconnect()
     console.log("Smoke PASS: M8 chat flow and M15 metrics/log lifecycle endpoints validated.")
   } finally {
-    serverProcess.kill("SIGTERM")
+    if (host) host.disconnect()
+    if (guest) guest.disconnect()
+    await stopProcess(serverProcess)
   }
 }
 

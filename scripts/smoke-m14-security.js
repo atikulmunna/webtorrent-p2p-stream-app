@@ -50,6 +50,24 @@ async function expectNoEvent(socket, event, timeoutMs = 1200) {
   if (fired) throw new Error(`Unexpected event received: ${event}`)
 }
 
+async function stopProcess(child) {
+  if (!child || child.killed) return
+  await new Promise((resolve) => {
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      resolve()
+    }
+    child.once("exit", finish)
+    child.kill("SIGTERM")
+    setTimeout(() => {
+      if (!done) child.kill("SIGKILL")
+    }, 1500)
+    setTimeout(finish, 4000)
+  })
+}
+
 async function run() {
   const serverProcess = spawn("node", ["index.js"], {
     cwd: path.resolve(__dirname, "..", "server"),
@@ -64,11 +82,14 @@ async function run() {
   serverProcess.stdout.on("data", () => {})
   serverProcess.stderr.on("data", () => {})
 
+  let host
+  let guest
+  let attacker
   try {
     await waitForServer()
-    const host = io(BASE_URL, { transports: ["websocket"], timeout: 5000 })
-    const guest = io(BASE_URL, { transports: ["websocket"], timeout: 5000 })
-    const attacker = io(BASE_URL, { transports: ["websocket"], timeout: 5000 })
+    host = io(BASE_URL, { transports: ["websocket"], timeout: 5000, reconnection: false })
+    guest = io(BASE_URL, { transports: ["websocket"], timeout: 5000, reconnection: false })
+    attacker = io(BASE_URL, { transports: ["websocket"], timeout: 5000, reconnection: false })
     await Promise.all([
       onceWithTimeout(host, "connect"),
       onceWithTimeout(guest, "connect"),
@@ -132,7 +153,10 @@ async function run() {
     attacker.disconnect()
     console.log("Smoke PASS: M14 host auth and abuse controls validated.")
   } finally {
-    serverProcess.kill("SIGTERM")
+    if (host) host.disconnect()
+    if (guest) guest.disconnect()
+    if (attacker) attacker.disconnect()
+    await stopProcess(serverProcess)
   }
 }
 

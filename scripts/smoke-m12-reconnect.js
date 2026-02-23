@@ -39,6 +39,24 @@ function onceWithTimeout(socket, event, timeoutMs = 5000) {
   })
 }
 
+async function stopProcess(child) {
+  if (!child || child.killed) return
+  await new Promise((resolve) => {
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      resolve()
+    }
+    child.once("exit", finish)
+    child.kill("SIGTERM")
+    setTimeout(() => {
+      if (!done) child.kill("SIGKILL")
+    }, 1500)
+    setTimeout(finish, 4000)
+  })
+}
+
 async function run() {
   const serverProcess = spawn("node", ["index.js"], {
     cwd: path.resolve(__dirname, "..", "server"),
@@ -55,10 +73,11 @@ async function run() {
 
   let host
   let guest
+  let guestReconnected
   try {
     await waitForServer()
-    host = io(BASE_URL, { transports: ["websocket"], timeout: 5000 })
-    guest = io(BASE_URL, { transports: ["websocket"], timeout: 5000 })
+    host = io(BASE_URL, { transports: ["websocket"], timeout: 5000, reconnection: false })
+    guest = io(BASE_URL, { transports: ["websocket"], timeout: 5000, reconnection: false })
     await Promise.all([onceWithTimeout(host, "connect"), onceWithTimeout(guest, "connect")])
 
     const roomId = `reconnect-${Date.now()}`
@@ -90,7 +109,7 @@ async function run() {
     guest.disconnect()
     await sleep(200)
 
-    const guestReconnected = io(BASE_URL, { transports: ["websocket"], timeout: 5000 })
+    guestReconnected = io(BASE_URL, { transports: ["websocket"], timeout: 5000, reconnection: false })
     await onceWithTimeout(guestReconnected, "connect")
 
     const resumeAck = await new Promise((resolve) => {
@@ -119,9 +138,10 @@ async function run() {
     guestReconnected.disconnect()
     console.log("Smoke PASS: M12 room resume and playback snapshot replay validated.")
   } finally {
-    if (host?.connected) host.disconnect()
-    if (guest?.connected) guest.disconnect()
-    serverProcess.kill("SIGTERM")
+    if (host) host.disconnect()
+    if (guest) guest.disconnect()
+    if (guestReconnected) guestReconnected.disconnect()
+    await stopProcess(serverProcess)
   }
 }
 

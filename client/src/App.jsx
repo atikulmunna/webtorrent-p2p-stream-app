@@ -58,6 +58,7 @@ function App() {
   const [chatMessages, setChatMessages] = useState([])
   const [selectedFile, setSelectedFile] = useState(null)
   const [magnetUri, setMagnetUri] = useState("")
+  const [magnetCopied, setMagnetCopied] = useState(false)
   const [joinMagnetUri, setJoinMagnetUri] = useState("")
   const [webTorrentReady, setWebTorrentReady] = useState(false)
   const [streamStatus, setStreamStatus] = useState("Idle")
@@ -753,8 +754,14 @@ function App() {
 
   const copyMagnet = async () => {
     if (!magnetUri) return
-    await navigator.clipboard.writeText(magnetUri)
-    addEvent("Magnet copied to clipboard")
+    try {
+      await navigator.clipboard.writeText(magnetUri)
+      setMagnetCopied(true)
+      addEvent("Magnet copied to clipboard")
+      setTimeout(() => setMagnetCopied(false), 1400)
+    } catch {
+      addEvent("! Failed to copy magnet")
+    }
   }
 
   const copyNormalizeCommand = async () => {
@@ -1116,14 +1123,10 @@ function App() {
               Copy Normalize Command
             </button>
             <button onClick={copyMagnet} disabled={!magnetUri}>
-              Copy Magnet
+              {magnetCopied ? "Copied!" : "Copy Magnet"}
             </button>
           </div>
-          {magnetUri ? (
-            <textarea readOnly value={magnetUri} rows={4} />
-          ) : (
-            <p>No magnet generated yet.</p>
-          )}
+          {magnetUri ? null : <p>No magnet generated yet.</p>}
         </div>
 
         <div className="card">

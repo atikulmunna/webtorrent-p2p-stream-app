@@ -48,6 +48,7 @@ button {
   background: #156fe5;
   color: #fff;
   padding: 0.5rem 0.8rem;
+  cursor: pointer;
 }
 
 button:disabled {

@@ -19,7 +19,7 @@ Browser-based P2P video streaming app spec and execution plan using WebTorrent +
   - `M9` done: live client/server metrics panel for throughput, drift, and RTC mode
   - `M15` done: server observability includes `/metrics` + retained structured `/logs`
   - `M11` in progress: tracker failover retries/quarantine logic added to stream join flow
-  - `M12` in progress: reconnect path now resumes room membership and replays playback snapshot
+  - `M12` done: reconnect path resumes room membership and replays playback snapshot after drop
   - `M13` in progress: MVP file compatibility guardrails and user errors
   - `M14` done: host authorization + identity/membership abuse controls are enforced server-side
 - Project specification and execution matrix live in `WebTorrent_P2P_Spec.md`.
@@ -86,7 +86,7 @@ npm run dev
 
 1. Complete `M1/M3` DoD validation (repeatable 10-minute stream tests, failure handling).
 2. Complete `M4` forced-relay verification with stable tracker/peer discovery runs.
-3. Complete `M11`/`M12` DoD validation runs under real transient network drops.
+3. Complete `M11` DoD validation under primary-tracker failure, then advance `M13`/`M16` closure.
 
 ## Validation Workflow (M1/M3)
 

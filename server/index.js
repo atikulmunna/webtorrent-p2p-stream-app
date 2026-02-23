@@ -5,7 +5,16 @@ const { randomUUID } = require("crypto")
 const express = require("express")
 const cors = require("cors")
 const { Server } = require("socket.io")
-const { addPeer, ensureRoom, getRoom, getRoomCount, isHostClient, listPeers, removePeer } = require("./rooms")
+const {
+  addPeer,
+  ensureRoom,
+  getRoom,
+  getRoomCount,
+  isHostClient,
+  isRoomMember,
+  listPeers,
+  removePeer,
+} = require("./rooms")
 
 const SERVER_PORT = Number(process.env.SERVER_PORT || process.env.PORT || 4000)
 const CLIENT_PORT = Number(process.env.CLIENT_PORT || process.env.VITE_DEV_SERVER_PORT || 5173)
@@ -136,6 +145,22 @@ function checkRateLimit(socket, key, limit, windowMs) {
   return bucket.count <= limit
 }
 
+function isSocketIdentityConflict(socket, roomId, clientId) {
+  const boundRoomId = socket.data?.roomId
+  const boundClientId = socket.data?.clientId
+  if (boundRoomId && boundRoomId !== roomId) return true
+  if (boundClientId && boundClientId !== clientId) return true
+  return false
+}
+
+function isAuthorizedRoomMember(socket, roomId) {
+  const socketRoomId = socket.data?.roomId
+  const socketClientId = socket.data?.clientId
+  if (!socketRoomId || !socketClientId) return false
+  if (socketRoomId !== roomId) return false
+  return isRoomMember(roomId, socketClientId)
+}
+
 const app = express()
 app.use(cors({ origin: CLIENT_ORIGIN }))
 app.use(express.json())
@@ -243,6 +268,20 @@ io.on("connection", (socket) => {
       recordLatency("room:create", startedAt)
       return
     }
+    if (isSocketIdentityConflict(socket, roomId, hostClientId)) {
+      ack?.({ ok: false, errorCode: "UNAUTHORIZED" })
+      incCounter("roomCreateFailure")
+      incError("UNAUTHORIZED")
+      recordLatency("room:create", startedAt)
+      return
+    }
+    if (getRoom(roomId)) {
+      ack?.({ ok: false, errorCode: "ROOM_ALREADY_EXISTS" })
+      incCounter("roomCreateFailure")
+      incError("ROOM_ALREADY_EXISTS")
+      recordLatency("room:create", startedAt)
+      return
+    }
 
     ensureRoom(roomId, hostClientId)
     addPeer(roomId, { clientId: hostClientId, displayName: normalizeDisplayName(displayName, "Host") })
@@ -273,12 +312,33 @@ io.on("connection", (socket) => {
       recordLatency("room:join", startedAt)
       return
     }
+    if (isSocketIdentityConflict(socket, roomId, guestClientId)) {
+      ack?.({ ok: false, errorCode: "UNAUTHORIZED" })
+      incCounter("roomJoinFailure")
+      incError("UNAUTHORIZED")
+      recordLatency("room:join", startedAt)
+      return
+    }
 
     const room = getRoom(roomId)
     if (!room) {
       ack?.({ ok: false, errorCode: "ROOM_NOT_FOUND" })
       incCounter("roomJoinFailure")
       incError("ROOM_NOT_FOUND")
+      recordLatency("room:join", startedAt)
+      return
+    }
+    if (room.hostClientId === guestClientId) {
+      ack?.({ ok: false, errorCode: "UNAUTHORIZED" })
+      incCounter("roomJoinFailure")
+      incError("UNAUTHORIZED")
+      recordLatency("room:join", startedAt)
+      return
+    }
+    if (isRoomMember(roomId, guestClientId)) {
+      ack?.({ ok: false, errorCode: "CLIENT_ID_IN_USE" })
+      incCounter("roomJoinFailure")
+      incError("CLIENT_ID_IN_USE")
       recordLatency("room:join", startedAt)
       return
     }
@@ -316,7 +376,7 @@ io.on("connection", (socket) => {
     }
 
     const senderId = socket.data?.clientId
-    if (!senderId || !isHostClient(payload.roomId, senderId)) {
+    if (!isAuthorizedRoomMember(socket, payload.roomId) || !senderId || !isHostClient(payload.roomId, senderId)) {
       socket.emit("room:error", { errorCode: "UNAUTHORIZED", context: "playback:state" })
       incError("UNAUTHORIZED")
       recordLatency("playback:state", startedAt)
@@ -344,7 +404,7 @@ io.on("connection", (socket) => {
     }
 
     const senderId = socket.data?.clientId
-    if (!senderId || !isHostClient(payload.roomId, senderId)) {
+    if (!isAuthorizedRoomMember(socket, payload.roomId) || !senderId || !isHostClient(payload.roomId, senderId)) {
       socket.emit("room:error", { errorCode: "UNAUTHORIZED", context: "playback:seek" })
       incError("UNAUTHORIZED")
       recordLatency("playback:seek", startedAt)
@@ -375,7 +435,7 @@ io.on("connection", (socket) => {
     }
 
     const senderId = socket.data?.clientId
-    if (!senderId || !isHostClient(payload.roomId, senderId)) {
+    if (!isAuthorizedRoomMember(socket, payload.roomId) || !senderId || !isHostClient(payload.roomId, senderId)) {
       socket.emit("room:error", { errorCode: "UNAUTHORIZED", context: "playback:sync" })
       incError("UNAUTHORIZED")
       recordLatency("playback:sync", startedAt)
@@ -401,16 +461,23 @@ io.on("connection", (socket) => {
       recordLatency("chat:send", startedAt)
       return
     }
+    if (!isAuthorizedRoomMember(socket, payload.roomId)) {
+      socket.emit("room:error", { errorCode: "UNAUTHORIZED", context: "chat:send" })
+      incError("UNAUTHORIZED")
+      recordLatency("chat:send", startedAt)
+      return
+    }
 
     const text = payload.text.trim()
+    const senderId = socket.data.clientId
     io.to(payload.roomId).emit("chat:message", {
       roomId: payload.roomId,
       messageId: payload.messageId || randomUUID(),
-      senderId: payload.senderId,
+      senderId,
       text,
-      sentAtMs: payload.sentAtMs || Date.now(),
+      sentAtMs: Number.isFinite(payload.sentAtMs) ? payload.sentAtMs : Date.now(),
     })
-    appendLog("info", "chat:message", { roomId: payload.roomId, senderId: payload.senderId })
+    appendLog("info", "chat:message", { roomId: payload.roomId, senderId })
     incCounter("chatMessagesForwarded")
     recordLatency("chat:send", startedAt)
   })
@@ -420,6 +487,12 @@ io.on("connection", (socket) => {
     if (!validateRoomPayload(roomId, clientId)) {
       socket.emit("room:error", { errorCode: "INVALID_PAYLOAD", context: "room:leave" })
       incError("INVALID_PAYLOAD")
+      recordLatency("room:leave", startedAt)
+      return
+    }
+    if (!isAuthorizedRoomMember(socket, roomId) || socket.data.clientId !== clientId) {
+      socket.emit("room:error", { errorCode: "UNAUTHORIZED", context: "room:leave" })
+      incError("UNAUTHORIZED")
       recordLatency("room:leave", startedAt)
       return
     }

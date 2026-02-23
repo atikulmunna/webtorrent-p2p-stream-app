@@ -11,9 +11,9 @@ This document is intentionally detailed so someone new to P2P/WebRTC can underst
 
 ## Live Demo
 
-[![WebTorrent P2P Stream App Demo](https://img.youtube.com/vi/7gyiDtff6nU/hqdefault.jpg)](https://youtu.be/7gyiDtff6nU)
+[![WebTorrent P2P Stream App Demo](https://img.youtube.com/vi/AsJDeO1ulPQ/hqdefault.jpg)](https://youtu.be/AsJDeO1ulPQ)
 
-[Watch on YouTube](https://youtu.be/7gyiDtff6nU)
+[Watch on YouTube](https://youtu.be/AsJDeO1ulPQ)
 
 ## 1. What This Project Is
 

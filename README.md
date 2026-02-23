@@ -18,6 +18,7 @@ Browser-based P2P video streaming app spec and execution plan using WebTorrent +
   - `M8` done: chat send/receive with server-side validation and rate limiting
   - `M9` done: live client/server metrics panel for throughput, drift, and RTC mode
   - `M15` done: server observability includes `/metrics` + retained structured `/logs`
+  - `M11` in progress: tracker failover retries/quarantine logic added to stream join flow
   - `M13` in progress: MVP file compatibility guardrails and user errors
   - `M14` done: host authorization + identity/membership abuse controls are enforced server-side
 - Project specification and execution matrix live in `WebTorrent_P2P_Spec.md`.
@@ -66,6 +67,7 @@ npm run dev
   - `VITE_DEV_SERVER_PORT` to pick preferred client dev port (fallback auto if busy)
   - `VITE_SIGNALING_URL` should match server port (for example `http://localhost:4000`)
   - `VITE_TRACKER_URLS` (comma-separated tracker announce URLs; local tracker first is recommended)
+  - `VITE_TRACKER_FAIL_THRESHOLD` errors before a tracker is quarantined during failover retry
   - `VITE_STUN_URLS` (comma-separated STUN URLs)
   - `VITE_TURN_URLS`, `VITE_TURN_USERNAME`, `VITE_TURN_CREDENTIAL`
   - `VITE_FORCE_TURN=1` to force relay-only mode during fallback tests
@@ -82,7 +84,7 @@ npm run dev
 
 1. Complete `M1/M3` DoD validation (repeatable 10-minute stream tests, failure handling).
 2. Complete `M4` forced-relay verification with stable tracker/peer discovery runs.
-3. Implement reliability milestones (`M11` tracker failover, `M12` reconnect flow).
+3. Complete `M11` DoD validation run, then implement `M12` reconnect flow.
 
 ## Validation Workflow (M1/M3)
 

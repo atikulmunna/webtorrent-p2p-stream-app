@@ -34,6 +34,7 @@ function App() {
   )
   const turnUsername = import.meta.env.VITE_TURN_USERNAME || ""
   const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL || ""
+  const trackerFailThreshold = Number(import.meta.env.VITE_TRACKER_FAIL_THRESHOLD || 2)
   const seedPieceLength = 256 * 1024
   const clientId = useMemo(() => crypto.randomUUID(), [])
   const [displayName, setDisplayName] = useState("Host")
@@ -54,6 +55,7 @@ function App() {
   const [syncDriftSec, setSyncDriftSec] = useState(0)
   const [downloadKbps, setDownloadKbps] = useState(0)
   const [torrentProgressPct, setTorrentProgressPct] = useState(0)
+  const [activeTrackerUrls, setActiveTrackerUrls] = useState(trackerUrls)
   const [validationReport, setValidationReport] = useState(null)
   const [serverMetrics, setServerMetrics] = useState(null)
   const socketRef = useRef(null)
@@ -72,6 +74,8 @@ function App() {
   const playRetryTimerRef = useRef(null)
   const metadataTimeoutRef = useRef(null)
   const streamSessionIdRef = useRef(0)
+  const streamFailoverAttemptsRef = useRef(0)
+  const trackerFailureRef = useRef(new Map())
   const rtcConfig = useMemo(() => {
     const iceServers = []
 
@@ -101,6 +105,33 @@ function App() {
 
   const addEvent = (text) => {
     setEvents((prev) => [text, ...prev].slice(0, 10))
+  }
+
+  const extractTrackerUrl = (text) => {
+    if (typeof text !== "string") return null
+    const match = text.match(/wss?:\/\/[^\s)]+/i)
+    return match?.[0] || null
+  }
+
+  const getAnnounceTrackers = (overrideTrackers = null) => {
+    if (Array.isArray(overrideTrackers) && overrideTrackers.length > 0) return overrideTrackers
+    if (activeTrackerUrls.length > 0) return activeTrackerUrls
+    return trackerUrls
+  }
+
+  const markTrackerFailure = (url) => {
+    if (!url || !trackerUrls.includes(url)) return null
+    const current = trackerFailureRef.current.get(url) || 0
+    const nextCount = current + 1
+    trackerFailureRef.current.set(url, nextCount)
+    if (nextCount < trackerFailThreshold) return null
+
+    const nextTrackers = getAnnounceTrackers().filter((item) => item !== url)
+    if (nextTrackers.length === 0) return null
+
+    setActiveTrackerUrls(nextTrackers)
+    addEvent(`Tracker quarantined after repeated errors: ${url}`)
+    return nextTrackers
   }
 
   const isLikelySupportedMvpVideo = (file) => {
@@ -352,6 +383,10 @@ function App() {
     }
   }, [forceTurnOnly, rtcConfig, stunUrls.length, turnUrls.length, trackerUrls.length])
 
+  useEffect(() => {
+    addEvent(`Active trackers: ${activeTrackerUrls.length}`)
+  }, [activeTrackerUrls.length])
+
   const createRoom = () => {
     if (!roomId.trim()) return
     socketRef.current?.emit(
@@ -427,11 +462,12 @@ function App() {
     }
     addEvent(getCompatibilityHint(selectedFile))
 
+    const announceTrackers = getAnnounceTrackers()
     destroyTorrentSafely(seedTorrentRef)
     setStreamStatus("Creating torrent")
     webTorrentClientRef.current.seed(
       selectedFile,
-      { announce: trackerUrls, private: false, pieceLength: seedPieceLength },
+      { announce: announceTrackers, private: false, pieceLength: seedPieceLength },
       (torrent) => {
         seedTorrentRef.current = torrent
         setMagnetUri(torrent.magnetURI)
@@ -444,16 +480,27 @@ function App() {
   }
 
   const startStreamingFromMagnet = () => {
+    startStreamingFromMagnetWithFailover(null, false)
+  }
+
+  const startStreamingFromMagnetWithFailover = (trackerOverride = null, preserveMetrics = false) => {
     if (!joinMagnetUri.trim() || !webTorrentClientRef.current) return
     resetStreamingSession()
     const sessionId = streamSessionIdRef.current
-    resetMetrics()
-    metricsRef.current.streamStartRequestedAt = Date.now()
+    if (!preserveMetrics) {
+      streamFailoverAttemptsRef.current = 0
+      resetMetrics()
+      metricsRef.current.streamStartRequestedAt = Date.now()
+    }
+    const announceTrackers = getAnnounceTrackers(trackerOverride)
+    let failoverTriggered = false
+
     setStreamStatus("Joining swarm")
     addEvent("Torrent join requested")
+    addEvent(`Attempt ${streamFailoverAttemptsRef.current + 1}: ${announceTrackers.length} tracker(s)`)
 
     const torrent = webTorrentClientRef.current.add(joinMagnetUri.trim(), {
-      announce: trackerUrls,
+      announce: announceTrackers,
     })
     streamTorrentRef.current = torrent
 
@@ -462,6 +509,14 @@ function App() {
     metadataTimeoutRef.current = setTimeout(() => {
       if (sessionId !== streamSessionIdRef.current) return
       if (!torrent.metadata && !playbackStartedRef.current) {
+        if (!failoverTriggered && announceTrackers.length > 1 && streamFailoverAttemptsRef.current < 2) {
+          failoverTriggered = true
+          streamFailoverAttemptsRef.current += 1
+          const rotated = [...announceTrackers.slice(1), announceTrackers[0]]
+          addEvent("! Metadata timeout; retrying with backup trackers")
+          startStreamingFromMagnetWithFailover(rotated, true)
+          return
+        }
         setStreamStatus("Error")
         addEvent("! Metadata timeout after 25s (tracker/peer discovery issue)")
       }
@@ -470,12 +525,33 @@ function App() {
     torrent.on("warning", (err) => {
       if (sessionId !== streamSessionIdRef.current) return
       addEvent(`! Torrent warning: ${err.message}`)
+      if (!failoverTriggered && !torrent.metadata && streamFailoverAttemptsRef.current < 2) {
+        const failedTracker = extractTrackerUrl(err.message)
+        const fallbackTrackers = markTrackerFailure(failedTracker)
+        if (fallbackTrackers && fallbackTrackers.length > 0) {
+          failoverTriggered = true
+          streamFailoverAttemptsRef.current += 1
+          addEvent("Retrying swarm with healthy tracker set")
+          startStreamingFromMagnetWithFailover(fallbackTrackers, true)
+        }
+      }
     })
 
     torrent.on("error", (err) => {
       if (sessionId !== streamSessionIdRef.current) return
-      setStreamStatus("Error")
       addEvent(`! Torrent error: ${err.message}`)
+      if (!failoverTriggered && !torrent.metadata && streamFailoverAttemptsRef.current < 2) {
+        const failedTracker = extractTrackerUrl(err.message)
+        const fallbackTrackers = markTrackerFailure(failedTracker)
+        if (fallbackTrackers && fallbackTrackers.length > 0) {
+          failoverTriggered = true
+          streamFailoverAttemptsRef.current += 1
+          addEvent("Retrying swarm with healthy tracker set")
+          startStreamingFromMagnetWithFailover(fallbackTrackers, true)
+          return
+        }
+      }
+      setStreamStatus("Error")
     })
 
     torrent.on("noPeers", (announceType) => {
@@ -1013,6 +1089,7 @@ function App() {
           <ul>
             <li>Client peers: {peers.length}</li>
             <li>RTC mode: {forceTurnOnly ? "relay-only" : "auto"}</li>
+            <li>Trackers active: {activeTrackerUrls.length}</li>
             <li>Download: {downloadKbps} kbps</li>
             <li>Torrent progress: {torrentProgressPct}%</li>
             <li>Sync drift: {syncDriftSec.toFixed(2)}s</li>

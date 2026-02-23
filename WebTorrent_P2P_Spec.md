@@ -382,7 +382,7 @@ Use this matrix as the single execution tracker during implementation. Keep `Sta
 | M12 | Reconnect resilience | P1 | Room rejoin + sync replay | 12.2 reconnect | After 10-20s drop, guest rejoins and resumes playback <= 10s p95 | `TODO` |
 | M13 | Compatibility guardrails | P1 | Error reporting events | 10.3, 12.3 | Unsupported codec/container is blocked with explicit actionable error | `IN_PROGRESS` |
 | M14 | Security controls | P1 | Authorization/rate-limit middleware | 14.1 | Host-only commands enforced server-side; rate limit and payload validation active | `IN_PROGRESS` |
-| M15 | Observability and logs | P1 | Metrics + error code aggregation | 13.1, 13.2, 13.3 | Required client/server metrics are visible and logs follow retention policy | `IN_PROGRESS` |
+| M15 | Observability and logs | P1 | Metrics + error code aggregation | 13.1, 13.2, 13.3 | Required client/server metrics are visible and logs follow retention policy | `DONE` |
 | M16 | Deployment + production smoke test | P0 | End-to-end flow | 12.4 | Public demo URL supports 2-peer streaming scenario successfully | `TODO` |
 
 ### 15.1 Recommended Delivery Order
@@ -402,7 +402,7 @@ Use this matrix as the single execution tracker during implementation. Keep `Sta
 
 ---
 
-*Updated to v1.4 by Codex | February 2026*
+*Updated to v1.5 by Codex | February 2026*
 
 ---
 
@@ -484,4 +484,4 @@ Implement work item: **[M#] <title>**
 
 ---
 
-*Updated to v1.4 by Codex | February 2026*
+*Updated to v1.5 by Codex | February 2026*

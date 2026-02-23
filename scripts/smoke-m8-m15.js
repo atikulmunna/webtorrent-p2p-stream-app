@@ -111,10 +111,21 @@ async function run() {
     if (typeof p95Join !== "number") {
       throw new Error("Expected numeric p95 room:join latency in metrics")
     }
+    if (!metrics?.logs || typeof metrics.logs.buffered !== "number" || typeof metrics.logs.retentionMs !== "number") {
+      throw new Error("Expected logs retention metadata in /metrics response")
+    }
+
+    const logsRes = await fetch(`${BASE_URL}/logs?limit=200`)
+    if (!logsRes.ok) throw new Error("Failed to fetch /logs")
+    const logsPayload = await logsRes.json()
+    const hasChatLog = Array.isArray(logsPayload.items) && logsPayload.items.some((e) => e.event === "chat:message")
+    if (!hasChatLog) {
+      throw new Error("Expected chat:message event in /logs output")
+    }
 
     host.disconnect()
     guest.disconnect()
-    console.log("Smoke PASS: M8 chat flow and M15 metrics endpoint validated.")
+    console.log("Smoke PASS: M8 chat flow and M15 metrics/log lifecycle endpoints validated.")
   } finally {
     serverProcess.kill("SIGTERM")
   }

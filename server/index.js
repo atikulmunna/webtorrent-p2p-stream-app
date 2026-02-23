@@ -16,6 +16,9 @@ const CLIENT_ID_MAX = 64
 const DISPLAY_NAME_MAX = 40
 const CHAT_MSG_MAX = 500
 const LATENCY_SAMPLE_LIMIT = 2000
+const LOG_RETENTION_MS = Number(process.env.LOG_RETENTION_MS || 15 * 60 * 1000)
+const LOG_BUFFER_MAX = Number(process.env.LOG_BUFFER_MAX || 2000)
+const LOG_PRUNE_INTERVAL_MS = Number(process.env.LOG_PRUNE_INTERVAL_MS || 30 * 1000)
 
 const metrics = {
   counters: {
@@ -32,6 +35,29 @@ const metrics = {
   },
   errorsByCode: {},
   latenciesMs: {},
+  logsDropped: 0,
+}
+const eventLogs = []
+
+function pruneLogs() {
+  const cutoff = Date.now() - LOG_RETENTION_MS
+  while (eventLogs.length > 0 && eventLogs[0].ts < cutoff) {
+    eventLogs.shift()
+  }
+}
+
+function appendLog(level, event, context = {}) {
+  pruneLogs()
+  if (eventLogs.length >= LOG_BUFFER_MAX) {
+    eventLogs.shift()
+    metrics.logsDropped += 1
+  }
+  eventLogs.push({
+    ts: Date.now(),
+    level,
+    event,
+    context,
+  })
 }
 
 function incCounter(name) {
@@ -43,6 +69,7 @@ function incCounter(name) {
 
 function incError(code) {
   metrics.errorsByCode[code] = (metrics.errorsByCode[code] || 0) + 1
+  appendLog("warn", "errorCode", { code })
 }
 
 function recordLatency(eventName, startedAt) {
@@ -118,6 +145,7 @@ app.get("/health", (_req, res) => {
 })
 
 app.get("/metrics", (_req, res) => {
+  pruneLogs()
   const latencyP95 = Object.fromEntries(
     Object.entries(metrics.latenciesMs).map(([eventName, samples]) => [eventName, p95(samples)]),
   )
@@ -130,6 +158,30 @@ app.get("/metrics", (_req, res) => {
     counters: metrics.counters,
     errorsByCode: metrics.errorsByCode,
     latencyP95Ms: latencyP95,
+    logs: {
+      buffered: eventLogs.length,
+      dropped: metrics.logsDropped,
+      retentionMs: LOG_RETENTION_MS,
+      maxEntries: LOG_BUFFER_MAX,
+    },
+  })
+})
+
+app.get("/logs", (req, res) => {
+  pruneLogs()
+  const sinceMs = Number(req.query.sinceMs || 0)
+  const limit = Math.min(Math.max(Number(req.query.limit || 100), 1), 1000)
+  const filtered = sinceMs > 0 ? eventLogs.filter((entry) => entry.ts >= sinceMs) : eventLogs
+  const items = filtered.slice(-limit)
+  res.json({
+    ok: true,
+    ts: Date.now(),
+    count: items.length,
+    totalBuffered: eventLogs.length,
+    dropped: metrics.logsDropped,
+    retentionMs: LOG_RETENTION_MS,
+    maxEntries: LOG_BUFFER_MAX,
+    items,
   })
 })
 
@@ -155,17 +207,21 @@ async function startWebTorrentTracker() {
 
     trackerServer.on("warning", (err) => {
       console.warn(`Tracker warning: ${err.message}`)
+      appendLog("warn", "tracker:warning", { message: err.message })
     })
     trackerServer.on("error", (err) => {
       console.error(`Tracker error: ${err.message}`)
+      appendLog("error", "tracker:error", { message: err.message })
     })
     trackerServer.on("listening", () => {
       console.log(`WebTorrent tracker listening on ws://localhost:${TRACKER_WS_PORT}/announce`)
+      appendLog("info", "tracker:listening", { port: TRACKER_WS_PORT })
     })
 
     trackerServer.listen(TRACKER_WS_PORT)
   } catch (err) {
     console.error(`Failed to start WebTorrent tracker: ${err.message}`)
+    appendLog("error", "tracker:start_failed", { message: err.message })
   }
 }
 
@@ -195,6 +251,7 @@ io.on("connection", (socket) => {
 
     ack?.({ ok: true, roomId, createdAt: Date.now() })
     io.to(roomId).emit("room:peers", { roomId, peers: listPeers(roomId) })
+    appendLog("info", "room:create", { roomId, clientId: hostClientId })
     incCounter("roomCreateSuccess")
     recordLatency("room:create", startedAt)
   })
@@ -238,6 +295,7 @@ io.on("connection", (socket) => {
     })
     io.to(roomId).emit("room:peers", { roomId, peers: listPeers(roomId) })
     ack?.({ ok: true, roomId })
+    appendLog("info", "room:join", { roomId, clientId: guestClientId })
     incCounter("roomJoinSuccess")
     recordLatency("room:join", startedAt)
   })
@@ -265,6 +323,7 @@ io.on("connection", (socket) => {
       return
     }
     socket.to(payload.roomId).emit("playback:state", payload)
+    appendLog("info", "playback:state", { roomId: payload.roomId, state: payload.state })
     incCounter("playbackStateForwarded")
     recordLatency("playback:state", startedAt)
   })
@@ -292,6 +351,7 @@ io.on("connection", (socket) => {
       return
     }
     socket.to(payload.roomId).emit("playback:seek", payload)
+    appendLog("info", "playback:seek", { roomId: payload.roomId, mediaTimeSec: payload.mediaTimeSec })
     incCounter("playbackSeekForwarded")
     recordLatency("playback:seek", startedAt)
   })
@@ -322,6 +382,7 @@ io.on("connection", (socket) => {
       return
     }
     socket.to(payload.roomId).emit("playback:sync", payload)
+    appendLog("info", "playback:sync", { roomId: payload.roomId, mediaTimeSec: payload.mediaTimeSec })
     incCounter("playbackSyncForwarded")
     recordLatency("playback:sync", startedAt)
   })
@@ -349,6 +410,7 @@ io.on("connection", (socket) => {
       text,
       sentAtMs: payload.sentAtMs || Date.now(),
     })
+    appendLog("info", "chat:message", { roomId: payload.roomId, senderId: payload.senderId })
     incCounter("chatMessagesForwarded")
     recordLatency("chat:send", startedAt)
   })
@@ -365,6 +427,7 @@ io.on("connection", (socket) => {
     removePeer(roomId, clientId)
     io.to(roomId).emit("room:peer-left", { roomId, clientId, leftAt: Date.now() })
     io.to(roomId).emit("room:peers", { roomId, peers: listPeers(roomId) })
+    appendLog("info", "room:leave", { roomId, clientId })
     incCounter("roomLeave")
     recordLatency("room:leave", startedAt)
   })
@@ -379,6 +442,7 @@ io.on("connection", (socket) => {
     removePeer(roomId, clientId)
     io.to(roomId).emit("room:peer-left", { roomId, clientId, leftAt: Date.now() })
     io.to(roomId).emit("room:peers", { roomId, peers: listPeers(roomId) })
+    appendLog("info", "disconnect", { roomId, clientId })
     incCounter("peerDisconnected")
     recordLatency("disconnect", startedAt)
   })
@@ -387,11 +451,15 @@ io.on("connection", (socket) => {
 server.listen(SERVER_PORT, () => {
   console.log(`Signaling server listening on http://localhost:${SERVER_PORT}`)
   console.log(`Allowed client origin: ${CLIENT_ORIGIN}`)
+  appendLog("info", "server:listening", { port: SERVER_PORT, clientOrigin: CLIENT_ORIGIN })
 })
 
 startWebTorrentTracker()
+const logPruneTimer = setInterval(pruneLogs, LOG_PRUNE_INTERVAL_MS)
+logPruneTimer.unref()
 
 function shutdown() {
+  clearInterval(logPruneTimer)
   if (trackerServer) {
     try {
       trackerServer.close()

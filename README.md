@@ -17,7 +17,7 @@ Browser-based P2P video streaming app spec and execution plan using WebTorrent +
   - `M7` in progress: peer counter and peer list UI
   - `M8` done: chat send/receive with server-side validation and rate limiting
   - `M9` done: live client/server metrics panel for throughput, drift, and RTC mode
-  - `M15` in progress: server `/metrics` endpoint with counters and p95 latencies
+  - `M15` done: server observability includes `/metrics` + retained structured `/logs`
   - `M13` in progress: MVP file compatibility guardrails and user errors
   - `M14` in progress: server-side host authorization for playback events
 - Project specification and execution matrix live in `WebTorrent_P2P_Spec.md`.
@@ -55,6 +55,7 @@ npm run dev
 - Client: `http://localhost:5173`
 - Server health: `http://localhost:4000/health`
 - Server metrics: `http://localhost:4000/metrics`
+- Server logs: `http://localhost:4000/logs?limit=100`
 - Local WebSocket tracker: `ws://localhost:8000/announce` (started by server)
 
 ## Environment
@@ -72,13 +73,16 @@ npm run dev
   - `SERVER_PORT` for signaling server port
   - `TRACKER_WS_PORT` for built-in WebSocket tracker port
   - `CLIENT_PORT` for default allowed client origin (`http://localhost:<CLIENT_PORT>`)
+  - `LOG_RETENTION_MS` retention window for in-memory structured logs
+  - `LOG_BUFFER_MAX` max retained structured log entries
+  - `LOG_PRUNE_INTERVAL_MS` background prune cadence for old logs
   - optional `CLIENT_ORIGIN` to override full origin explicitly
 
 ## Next Build Target
 
 1. Complete `M1/M3` DoD validation (repeatable 10-minute stream tests, failure handling).
 2. Complete `M4` forced-relay verification with stable tracker/peer discovery runs.
-3. Finish `M15` retention policy + logging lifecycle and close `M14` abuse controls.
+3. Close `M14` abuse controls and continue reliability milestones (`M11`, `M12`).
 
 ## Validation Workflow (M1/M3)
 

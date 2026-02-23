@@ -8,7 +8,7 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,5 +28,23 @@ jobs:
       - name: Install server deps
         run: npm ci --prefix server
 
-      - name: Run verify gate
-        run: npm run verify:all
+      - name: Run policy tests
+        run: npm run test:policy
+
+      - name: Build client
+        run: npm run build --prefix client
+
+      - name: Smoke M2/M5/M6/M7
+        run: timeout 180s npm run smoke:m2m5m6m7
+
+      - name: Smoke M11
+        run: timeout 180s npm run smoke:m11
+
+      - name: Smoke M8/M15
+        run: timeout 180s npm run smoke:m8m15
+
+      - name: Smoke M14
+        run: timeout 180s npm run smoke:m14
+
+      - name: Smoke M12
+        run: timeout 180s npm run smoke:m12

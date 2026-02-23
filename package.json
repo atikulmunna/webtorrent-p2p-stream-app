@@ -12,7 +12,6 @@
     "start": "npm run start --prefix server",
     "validate:report": "node scripts/evaluate-validation-report.js",
     "validate:relay": "node scripts/evaluate-validation-report.js --require-relay",
-    "validate:prod-smoke": "node scripts/validate-production-smoke.js",
     "video:normalize": "node scripts/normalize-video.js",
     "smoke:m2m5m6m7": "node scripts/smoke-m2-m5-m6-m7.js",
     "smoke:m11": "node scripts/smoke-m11-tracker-failover.js",

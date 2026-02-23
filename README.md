@@ -22,7 +22,7 @@ Browser-based P2P video streaming app spec and execution plan using WebTorrent +
   - `M12` done: reconnect path resumes room membership and replays playback snapshot after drop
   - `M13` done: unsupported container paths are blocked with explicit actionable normalize guidance
   - `M14` done: host authorization + identity/membership abuse controls are enforced server-side
-  - `M16` in progress: CI deployment gate + production smoke validation tooling added
+  - `M16` in progress: pending public deployment and external production smoke evidence
 - Project specification and execution matrix live in `WebTorrent_P2P_Spec.md`.
 
 ## Implementation Changelog
@@ -124,11 +124,6 @@ Forced-relay validation (`M4`) requiring TURN relay mode:
 npm run validate:relay -- path\\to\\report-host.json path\\to\\report-guest.json
 ```
 
-Production smoke validator (`M16`, requires >= 300s guest playback):
-
-```bash
-npm run validate:prod-smoke -- path\\to\\report-host.json path\\to\\report-guest.json
-```
 
 Smoke test for M8/M15 wiring (chat + `/metrics` counters):
 
@@ -172,7 +167,6 @@ Full local verification gate (required before progressing milestones):
 npm run verify:all
 ```
 
-Deployment checklist for `M16`: see `DEPLOYMENT.md`.
 
 Current checks:
 - `ttffMs <= 6000` (baseline), with `<= 4000` as stretch goal

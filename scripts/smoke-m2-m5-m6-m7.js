@@ -45,6 +45,24 @@ function p95(values) {
   return sorted[Math.min(idx, sorted.length - 1)]
 }
 
+async function stopProcess(child) {
+  if (!child || child.killed) return
+  await new Promise((resolve) => {
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      resolve()
+    }
+    child.once("exit", finish)
+    child.kill("SIGTERM")
+    setTimeout(() => {
+      if (!done) child.kill("SIGKILL")
+    }, 1500)
+    setTimeout(finish, 4000)
+  })
+}
+
 async function run() {
   const serverProcess = spawn("node", ["index.js"], {
     cwd: path.resolve(__dirname, "..", "server"),
@@ -65,8 +83,8 @@ async function run() {
   try {
     await waitForServer()
 
-    host = io(BASE_URL, { transports: ["websocket"], timeout: 5000 })
-    guest = io(BASE_URL, { transports: ["websocket"], timeout: 5000 })
+    host = io(BASE_URL, { transports: ["websocket"], timeout: 5000, reconnection: false })
+    guest = io(BASE_URL, { transports: ["websocket"], timeout: 5000, reconnection: false })
     await Promise.all([onceWithTimeout(host, "connect"), onceWithTimeout(guest, "connect")])
 
     const roomId = `core-${Date.now()}`
@@ -177,9 +195,9 @@ async function run() {
     guest.disconnect()
     console.log("Smoke PASS: M2/M5/M6/M7 room, playback, and peer-consistency flows validated.")
   } finally {
-    if (host?.connected) host.disconnect()
-    if (guest?.connected) guest.disconnect()
-    serverProcess.kill("SIGTERM")
+    if (host) host.disconnect()
+    if (guest) guest.disconnect()
+    await stopProcess(serverProcess)
   }
 }
 

@@ -1,207 +1,354 @@
-# webtorrent-p2p-stream-app
+# WebTorrent P2P Stream App
 
-Browser-based P2P video streaming app spec and execution plan using WebTorrent + WebRTC.
+Browser-based peer-to-peer video streaming and watch-party app using WebTorrent + WebRTC + Socket.io.
 
-## Current Status
+This document is intentionally detailed so someone new to P2P/WebRTC can understand:
+- what this project does,
+- how the pieces work together,
+- how to run and test it,
+- what problems were hit during implementation,
+- and how those problems were solved.
 
-- GitHub repo, milestones, labels, and `M1-M16` issues are initialized.
-- Monorepo baseline is scaffolded:
-  - `client`: React + Vite control panel for signaling room flow
-  - `server`: Express + Socket.io signaling server with room lifecycle events
-- Implemented baseline features:
-  - `M1` done: host file upload and magnet generation via WebTorrent
-  - `M2` done: room create/join/leave with peer presence consistency
-  - `M3` done: guest join by magnet and in-browser video render
-  - `M4` done: forced relay fallback validated with relay-only evidence reports
-  - `M5` done: host playback controls relay to guests within smoke-validated p95 latency target
-  - `M6` done: drift correction validated in long-run session with <= 1.0s p95 drift evidence
-  - `M7` done: peer list/count consistency validated by integration smoke
-  - `M8` done: chat send/receive with server-side validation and rate limiting
-  - `M9` done: live client/server metrics panel for throughput, drift, and RTC mode
-  - `M10` done: subtitle upload/render supports `.vtt` and `.srt` conversion path
-  - `M15` done: server observability includes `/metrics` + retained structured `/logs`
-  - `M11` done: tracker failover is validated by dead-primary/live-secondary smoke run
-  - `M12` done: reconnect path resumes room membership and replays playback snapshot after drop
-  - `M13` done: unsupported container paths are blocked with explicit actionable normalize guidance
-  - `M14` done: host authorization + identity/membership abuse controls are enforced server-side
-  - `M16` in progress: pending public deployment and external production smoke evidence
-- Project specification and execution matrix live in `WebTorrent_P2P_Spec.md`.
+## 1. What This Project Is
 
-## Implementation Changelog
+This app lets one browser act as a host (seed) and another browser act as a guest (leech/playback), with:
+- room-based signaling,
+- torrent-based media transfer,
+- playback sync,
+- chat,
+- metrics and validation reports,
+- reconnect recovery,
+- tracker failover,
+- subtitle upload/render (`.vtt` and `.srt` conversion).
 
-- `ab9a35f`: docs: add webtorrent spec v1.3 and issue backlog
-- `ef6223b`: scaffold client/server baseline and signaling flow
-- `fe50283`: add WebTorrent magnet creation and basic browser streaming
-- `6add712`: harden torrent session handling and add host playback sync baseline
-- `0a15a19`: enforce host-only playback events and surface auth errors
-- `c2fb18a`: add guest drift correction using playback sync events
+No central media server is used for video payload transfer. Media is transferred peer-to-peer through WebTorrent/WebRTC channels.
 
-## Quick Start
+## 2. Current Milestone Status
 
-### Prerequisites
+Completed:
+- `M1` File upload + torrent creation
+- `M2` Room lifecycle (create/join/leave + peer presence)
+- `M3` End-to-end browser streaming
+- `M4` TURN relay fallback validation
+- `M5` Host-authoritative playback controls
+- `M6` Drift correction loop validation
+- `M7` Peer list/count correctness
+- `M8` Group chat + validation/rate limiting
+- `M9` Metrics visualization
+- `M10` Subtitle upload/render (`.vtt`, `.srt -> .vtt`)
+- `M11` Tracker failover resilience
+- `M12` Reconnect + room resume
+- `M13` Compatibility guardrails
+- `M14` Security controls (auth/abuse)
+- `M15` Observability/log retention
+
+Open:
+- `M16` Public deployment + production external smoke validation
+
+## 3. High-Level Architecture
+
+### Client (`client/`)
+- React + Vite UI.
+- WebTorrent browser client for seed/join.
+- HTML5 `<video>` playback.
+- Socket.io client for room events, chat, sync, and resume.
+- Local metrics and validation report export.
+
+### Server (`server/`)
+- Express + Socket.io signaling.
+- In-memory room and peer state.
+- Host authorization checks for playback events.
+- Rate limiting + payload validation.
+- Built-in WebSocket tracker process for local testing.
+- Metrics and log endpoints:
+  - `GET /health`
+  - `GET /metrics`
+  - `GET /logs`
+
+## 4. Data Flow (Beginner View)
+
+1. Host creates room.
+2. Host selects MP4 and clicks `Create Magnet`.
+3. WebTorrent seeds file and generates magnet URI.
+4. Guest joins room and starts from magnet URI.
+5. Guest discovers peer(s) via tracker(s), gets metadata, then streams file.
+6. Host playback actions (`play/pause/seek/sync`) are broadcast via Socket.io.
+7. Guest drift loop adjusts playback to stay in sync.
+8. Optional subtitles are loaded locally into video `<track>`.
+
+## 5. Repository Layout
+
+```text
+.
+├─ client/                        # React UI
+│  ├─ src/
+│  │  ├─ App.jsx                  # Main app logic and UI
+│  │  └─ lib/
+│  │     ├─ stream-policy.js      # Compatibility + tracker policy helpers
+│  │     └─ subtitles.js          # Subtitle conversion/prep helpers
+│  └─ test/                       # Node test runner unit tests
+├─ server/
+│  ├─ index.js                    # Signaling + tracker + metrics/logs
+│  └─ rooms.js                    # Room/peer/playback snapshot state
+├─ scripts/
+│  ├─ evaluate-validation-report.js
+│  ├─ validate-milestone-evidence.js
+│  ├─ normalize-video.js
+│  ├─ smoke-m2-m5-m6-m7.js
+│  ├─ smoke-m8-m15.js
+│  ├─ smoke-m11-tracker-failover.js
+│  ├─ smoke-m12-reconnect.js
+│  └─ smoke-m14-security.js
+└─ WebTorrent_P2P_Spec.md         # Detailed project specification
+```
+
+## 6. Prerequisites
 
 - Node.js 20+
 - npm 10+
+- FFmpeg installed (for `video:normalize`)
 
-### Install
+## 7. Install
 
 ```bash
 npm install
-cd client && npm install
-cd ../server && npm install
+npm install --prefix client
+npm install --prefix server
 ```
 
-### Run (client + server)
+## 8. Local Run
 
+Recommended (separate terminals):
+
+Terminal A:
 ```bash
-npm run dev
+npm run dev:server
 ```
 
-- Client: `http://localhost:5173`
-- Server health: `http://localhost:4000/health`
+Terminal B:
+```bash
+npm run dev:client
+```
+
+URLs:
+- Client: `http://localhost:5173` (or fallback `5174` if busy)
+- Server health: `http://localhost:4000/health` (or your configured port)
 - Server metrics: `http://localhost:4000/metrics`
-- Server logs: `http://localhost:4000/logs?limit=100`
-- Local WebSocket tracker: `ws://localhost:8000/announce` (started by server)
 
-## Environment
+## 9. Environment Configuration
 
-- Client env template: `client/.env.example`
-- Server env template: `server/.env.example`
-- TURN/STUN client vars:
-  - `VITE_DEV_SERVER_PORT` to pick preferred client dev port (fallback auto if busy)
-  - `VITE_SIGNALING_URL` should match server port (for example `http://localhost:4000`)
-  - `VITE_TRACKER_URLS` (comma-separated tracker announce URLs; local tracker first is recommended)
-  - `VITE_TRACKER_FAIL_THRESHOLD` errors before a tracker is quarantined during failover retry
-  - `VITE_STREAM_STRATEGY` WebTorrent add strategy (recommended: `sequential` for earlier playback start)
-  - `VITE_STUN_URLS` (comma-separated STUN URLs)
-  - `VITE_TURN_URLS`, `VITE_TURN_USERNAME`, `VITE_TURN_CREDENTIAL`
-  - `VITE_FORCE_TURN=1` to force relay-only mode during fallback tests
-- Server vars:
-  - `SERVER_PORT` for signaling server port
-  - `TRACKER_WS_PORT` for built-in WebSocket tracker port
-  - `CLIENT_PORT` for default allowed client origin (`http://localhost:<CLIENT_PORT>`)
-  - `LOG_RETENTION_MS` retention window for in-memory structured logs
-  - `LOG_BUFFER_MAX` max retained structured log entries
-  - `LOG_PRUNE_INTERVAL_MS` background prune cadence for old logs
-  - optional `CLIENT_ORIGIN` to override full origin explicitly
+### Server (`server/.env`)
 
-## Next Build Target
+Common local config:
 
-1. Execute `M16` public deploy + production smoke evidence.
-2. Keep regression gate green (`npm run verify:all`) before milestone/status changes.
-3. Keep `M16` open until deploy evidence is available.
-
-## Validation Workflow (M1/M3)
-
-1. Start app with `npm run dev`.
-2. In browser tab A (host), create room, select `.mp4`, click `Create Magnet`.
-3. In browser tab B (guest), join same room, paste magnet, click `Start Streaming`.
-4. Run for at least 10 minutes.
-5. Click `Generate Validation Report`, then `Export Report JSON`.
-6. For TURN fallback verification, set `VITE_FORCE_TURN=1`, restart client, and repeat.
-
-The report includes:
-- `ttffMs` (time to first frame)
-- `rebufferCount`, `rebufferTotalMs`, `rebufferRatioPct`
-- `driftP95Sec`, `latestDriftSec`
-- `torrentProgressPct`, `downloadKbps`, `peerCount`
-
-### Evaluate NFR Pass/Fail
-
-Use the built-in validator to compare exported reports against Section 10 NFR thresholds.
-
-```bash
-npm run validate:report -- path\\to\\validation-report-1.json
+```env
+SERVER_PORT=4001
+TRACKER_WS_PORT=8001
+CLIENT_PORT=5173
+CLIENT_ORIGIN=http://localhost:5173,http://localhost:5174
+LOG_RETENTION_MS=900000
+LOG_BUFFER_MAX=2000
+LOG_PRUNE_INTERVAL_MS=30000
 ```
 
-Multiple reports:
+Notes:
+- `CLIENT_ORIGIN` supports comma-separated origins.
+- If Vite starts on `5174`, add it, or sockets may reconnect repeatedly.
 
-```bash
-npm run validate:report -- path\\to\\report-host.json path\\to\\report-guest.json
+### Client (`client/.env`)
+
+Common local config:
+
+```env
+VITE_SIGNALING_URL=http://localhost:4001
+VITE_TRACKER_URLS=ws://localhost:8001/announce,wss://tracker.btorrent.xyz,wss://tracker.openwebtorrent.com
+VITE_TRACKER_FAIL_THRESHOLD=2
+VITE_STREAM_STRATEGY=sequential
+
+VITE_STUN_URLS=stun:stun.relay.metered.ca:80
+VITE_TURN_URLS=turn:standard.relay.metered.ca:80,turn:standard.relay.metered.ca:80?transport=tcp,turn:standard.relay.metered.ca:443,turns:standard.relay.metered.ca:443?transport=tcp
+VITE_TURN_USERNAME=...
+VITE_TURN_CREDENTIAL=...
+
+VITE_FORCE_TURN=0
 ```
 
-Forced-relay validation (`M4`) requiring TURN relay mode:
+For M4 relay validation only:
+- set `VITE_FORCE_TURN=1`
+- restart client process
 
+## 10. Core Commands
+
+### Build
 ```bash
-npm run validate:relay -- path\\to\\report-host.json path\\to\\report-guest.json
+npm run build --prefix client
 ```
 
-Milestone evidence gates:
-
-```bash
-# M4: relay-only + NFR + guest playback >= 60s
-npm run validate:m4 -- path\\to\\report-host.json path\\to\\report-guest.json
-
-# M6: drift p95 <= 1.0s + guest playback >= 600s + NFR
-npm run validate:m6 -- path\\to\\report-host.json path\\to\\report-guest.json
-```
-
-
-Smoke test for M8/M15 wiring (chat + `/metrics` counters):
-
-```bash
-npm run smoke:m8m15
-```
-
-Smoke test for M11 tracker failover (dead primary tracker + healthy secondary):
-
-```bash
-npm run smoke:m11
-```
-
-Smoke test for M2/M5/M6/M7 core room/playback flows:
-
-```bash
-npm run smoke:m2m5m6m7
-```
-
-Smoke test for M14 security controls (host authority + anti-spoof checks):
-
-```bash
-npm run smoke:m14
-```
-
-Smoke test for M12 reconnect flow (`room:resume` + playback snapshot replay):
-
-```bash
-npm run smoke:m12
-```
-
-Policy/unit tests for M11/M13 helpers:
-
-```bash
-npm run test:policy
-```
-
-Full local verification gate (required before progressing milestones):
-
+### Full Verification Gate
 ```bash
 npm run verify:all
 ```
 
+This runs:
+- policy/unit tests,
+- client production build,
+- all smoke tests.
 
-Current checks:
-- `ttffMs <= 6000` (baseline), with `<= 4000` as stretch goal
-- `rebufferRatioPct <= 3`
-- `driftP95Sec <= 1.0`
-
-## Media Compatibility Workflow
-
-If a file streams audio-only, black frames, or delayed startup, normalize it before upload.
-
+### Smoke Tests
 ```bash
-npm run video:normalize -- "C:\\path\\to\\input.mp4"
+npm run smoke:m2m5m6m7
+npm run smoke:m11
+npm run smoke:m8m15
+npm run smoke:m14
+npm run smoke:m12
 ```
 
-Optional custom output path:
-
+### Validation Reports
 ```bash
-npm run video:normalize -- "C:\\path\\to\\input.mp4" "C:\\path\\to\\output_safe.mp4"
+npm run validate:report -- host.json guest.json
+npm run validate:relay -- host.json guest.json
+npm run validate:m4 -- host.json guest.json
+npm run validate:m6 -- host.json guest.json
 ```
 
-Normalization profile:
-- MP4 + H.264 (`yuv420p`)
-- 720p at 30fps
-- AAC stereo (`128k`)
+### Video Normalization
+```bash
+npm run video:normalize -- "C:\path\to\input.mp4"
+```
 
-This profile is used as the known-good test input for reproducible M1/M3 validation runs.
+## 11. How Validation Works
+
+The app can export JSON validation reports from host and guest.
+
+Metrics include:
+- `ttffMs`
+- `sessionPlaybackSec`
+- `rebufferRatioPct`
+- `driftP95Sec`
+- `rtcMode`
+- peer and download telemetry
+
+### Milestone evidence validators
+
+`validate:m4` requires:
+- relay mode (`rtcMode=relay-only`),
+- baseline NFR checks,
+- guest playback >= 60s.
+
+`validate:m6` requires:
+- baseline NFR checks,
+- guest playback >= 600s,
+- guest drift p95 <= 1.0s.
+
+## 12. M10 (Subtitles) Usage
+
+In the Video Player section:
+- upload `.vtt` directly, or
+- upload `.srt` and it is converted to VTT in-browser.
+
+Controls:
+- subtitle upload field,
+- active subtitle label display,
+- clear subtitles button.
+
+## 13. Real Setbacks and How They Were Solved
+
+These are issues actually encountered during implementation/testing.
+
+### 1) `EADDRINUSE` on server/tracker/client ports
+Problem:
+- Existing process held `4000/4001`, `8000/8001`, or Vite port.
+
+Fix:
+- run server/client in separate terminals.
+- support configurable env ports.
+- kill stale node processes when needed.
+
+### 2) `.env` changes seemed ignored
+Problem:
+- env vars were edited but runtime behavior didn’t change.
+
+Fix:
+- restart processes after env edits.
+- verify UI event logs for mode (`relay-only` vs `auto`).
+
+### 3) Host socket disconnect/rejoin loop
+Problem:
+- host repeatedly left/joined room.
+
+Cause:
+- CORS origin mismatch (`5174` not allowed while client actually ran there).
+
+Fix:
+- allow multiple origins via `CLIENT_ORIGIN` comma list.
+
+### 4) Black screen / stall even at 100%
+Problem:
+- media downloaded but didn’t render.
+
+Cause:
+- codec/profile/container incompatibility.
+
+Fix:
+- stricter compatibility guardrails.
+- `.mp4` selection enforcement for stream path.
+- explicit normalize guidance.
+- blob fallback attempt before terminal error.
+
+### 5) Tracker discovery failures (`No peers`, metadata timeout)
+Problem:
+- guest could not discover host peer.
+
+Fix:
+- multiple tracker URLs.
+- failover/quarantine logic.
+- M11 smoke ensures dead primary + live secondary fallback path.
+
+### 6) Reconnect behavior and auto-start confusion
+Problem:
+- resume logic could trigger unintended stream restarts.
+
+Fix:
+- gate auto-resume stream restart behind explicit prior user start action.
+
+### 7) Forced TURN mode high startup latency
+Observation:
+- relay mode may pass functional criteria but degrade TTFF.
+
+Approach:
+- use known-good normalized media for relay tests.
+- dedicated M4 evidence validator.
+
+## 14. Security and Abuse Controls
+
+Implemented:
+- room payload validation,
+- rate limiting by socket/action,
+- host-only authorization for playback commands,
+- room membership checks,
+- anti-impersonation checks,
+- server-derived chat sender identity.
+
+Validated via:
+```bash
+npm run smoke:m14
+```
+
+## 15. Observability
+
+Server endpoints:
+- `/metrics` for counters and latency summaries
+- `/logs` for retained structured in-memory logs
+
+Validated via:
+```bash
+npm run smoke:m8m15
+```
+
+## 16. What Is Left
+
+Only `M16` remains open:
+- public deployment
+- external (different networks) production smoke evidence
+
+Everything else is implemented and validated in local/integration test gates.

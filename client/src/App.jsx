@@ -95,6 +95,10 @@ function App() {
   const allowAutoResumeStreamRef = useRef(false)
   const reconnectPendingRef = useRef(false)
   const pendingPlaybackSnapshotRef = useRef(null)
+  const activeRoomRef = useRef("")
+  const isHostRoleRef = useRef(false)
+  const joinMagnetUriRef = useRef("")
+  const displayNameRef = useRef("Host")
   const rtcConfig = useMemo(() => {
     const iceServers = []
 
@@ -383,17 +387,24 @@ function App() {
   }
 
   useEffect(() => {
+    activeRoomRef.current = activeRoom
+    isHostRoleRef.current = isHostRole
+    joinMagnetUriRef.current = joinMagnetUri
+    displayNameRef.current = displayName
+  }, [activeRoom, isHostRole, joinMagnetUri, displayName])
+
+  useEffect(() => {
     const s = io(signalingUrl, { autoConnect: true })
     s.on("connect", () => {
       setStatus("Connected")
-      if (!reconnectPendingRef.current || !activeRoom) return
+      if (!reconnectPendingRef.current || !activeRoomRef.current) return
       s.emit(
         "room:resume",
         {
-          roomId: activeRoom,
+          roomId: activeRoomRef.current,
           clientId,
-          displayName,
-          role: isHostRole ? "host" : "guest",
+          displayName: displayNameRef.current,
+          role: isHostRoleRef.current ? "host" : "guest",
         },
         (ack) => {
           if (!ack?.ok) {
@@ -403,13 +414,13 @@ function App() {
           reconnectPendingRef.current = false
           setActiveRoom(ack.roomId)
           addEvent(`Session resumed for room ${ack.roomId}`)
-          if (!isHostRole && ack.playbackSnapshot) {
+          if (!isHostRoleRef.current && ack.playbackSnapshot) {
             pendingPlaybackSnapshotRef.current = ack.playbackSnapshot
           }
           if (
-            !isHostRole &&
+            !isHostRoleRef.current &&
             allowAutoResumeStreamRef.current &&
-            joinMagnetUri.trim() &&
+            joinMagnetUriRef.current.trim() &&
             !streamTorrentRef.current
           ) {
             startStreamingFromMagnetWithFailover(null, true)
@@ -419,7 +430,7 @@ function App() {
     })
     s.on("disconnect", () => {
       setStatus("Disconnected")
-      if (activeRoom) {
+      if (activeRoomRef.current) {
         reconnectPendingRef.current = true
         addEvent("Signaling disconnected; attempting room resume on reconnect")
       }
@@ -455,7 +466,7 @@ function App() {
       s.disconnect()
       socketRef.current = null
     }
-  }, [signalingUrl, activeRoom, clientId, displayName, isHostRole, joinMagnetUri])
+  }, [signalingUrl, clientId])
 
   useEffect(() => {
     if (!window.WebTorrent) {

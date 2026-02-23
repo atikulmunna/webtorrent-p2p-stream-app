@@ -402,7 +402,7 @@ Use this matrix as the single execution tracker during implementation. Keep `Sta
 
 ---
 
-*Updated to v1.15 by Codex | February 2026*
+*Updated to v1.16 by Codex | February 2026*
 
 ---
 
@@ -484,4 +484,16 @@ Implement work item: **[M#] <title>**
 
 ---
 
-*Updated to v1.15 by Codex | February 2026*
+## 17. Latest Validation Notes
+
+- Date: February 23, 2026
+- Fix applied: stabilized client Socket.IO lifecycle to prevent unintended disconnect/reconnect after `room:create` state updates.
+- User-visible symptom resolved: host no longer drops immediately after creating a room; guest `ROOM_NOT_FOUND` regression resolved for normal create/join flow.
+- Verification evidence:
+  - `npm run smoke:m8m15` -> PASS
+  - `npm run verify:all` -> PASS (policy tests, client build, and all smoke suites)
+- Milestone impact: no status change required; M2/M8/M15 remain `DONE`, M16 remains `IN_PROGRESS`.
+
+---
+
+*Updated to v1.16 by Codex | February 2026*

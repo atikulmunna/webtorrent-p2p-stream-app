@@ -30,6 +30,10 @@
   flex-wrap: wrap;
 }
 
+.actions input {
+  flex: 1 1 280px;
+}
+
 input,
 textarea {
   border: 1px solid #cfd6dd;
@@ -80,6 +84,15 @@ ul {
   overflow: auto;
   max-height: 280px;
   font-size: 0.85rem;
+}
+
+.chat-list {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  padding: 0.6rem;
+  margin-bottom: 0.8rem;
 }
 
 @media (max-width: 768px) {

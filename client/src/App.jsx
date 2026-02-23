@@ -42,6 +42,8 @@ function App() {
   const [status, setStatus] = useState("Disconnected")
   const [peers, setPeers] = useState([])
   const [events, setEvents] = useState([])
+  const [chatInput, setChatInput] = useState("")
+  const [chatMessages, setChatMessages] = useState([])
   const [selectedFile, setSelectedFile] = useState(null)
   const [magnetUri, setMagnetUri] = useState("")
   const [joinMagnetUri, setJoinMagnetUri] = useState("")
@@ -53,6 +55,7 @@ function App() {
   const [downloadKbps, setDownloadKbps] = useState(0)
   const [torrentProgressPct, setTorrentProgressPct] = useState(0)
   const [validationReport, setValidationReport] = useState(null)
+  const [serverMetrics, setServerMetrics] = useState(null)
   const socketRef = useRef(null)
   const webTorrentClientRef = useRef(null)
   const seedTorrentRef = useRef(null)
@@ -289,6 +292,19 @@ function App() {
     s.on("room:error", (payload) => {
       setEvents((prev) => [`! ${payload.errorCode} (${payload.context})`, ...prev].slice(0, 8))
     })
+    s.on("chat:message", (payload) => {
+      setChatMessages((prev) =>
+        [
+          ...prev,
+          {
+            messageId: payload.messageId,
+            senderId: payload.senderId || "unknown",
+            text: payload.text || "",
+            sentAtMs: payload.sentAtMs || Date.now(),
+          },
+        ].slice(-100),
+      )
+    })
     socketRef.current = s
 
     return () => {
@@ -383,8 +399,22 @@ function App() {
     socketRef.current?.emit("room:leave", { roomId: activeRoom, clientId })
     setActiveRoom("")
     setPeers([])
+    setChatMessages([])
     setIsHostRole(false)
     addEvent("Left room")
+  }
+
+  const sendChatMessage = () => {
+    const text = chatInput.trim()
+    if (!text || !activeRoom) return
+    socketRef.current?.emit("chat:send", {
+      roomId: activeRoom,
+      messageId: crypto.randomUUID(),
+      senderId: clientId,
+      text,
+      sentAtMs: Date.now(),
+    })
+    setChatInput("")
   }
 
   const createTorrentFromFile = () => {
@@ -777,6 +807,23 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    const pollMetrics = async () => {
+      try {
+        const response = await fetch(`${signalingUrl}/metrics`)
+        if (!response.ok) return
+        const data = await response.json()
+        setServerMetrics(data)
+      } catch {
+        // ignore transient poll errors
+      }
+    }
+
+    pollMetrics()
+    const timer = setInterval(pollMetrics, 5000)
+    return () => clearInterval(timer)
+  }, [signalingUrl])
+
   return (
     <main className="app">
       <header>
@@ -928,6 +975,55 @@ function App() {
               ))}
             </ul>
           )}
+        </div>
+      </section>
+
+      <section className="grid">
+        <div className="card">
+          <h2>Chat (M8)</h2>
+          <div className="chat-list">
+            {chatMessages.length === 0 ? (
+              <p>No chat messages yet.</p>
+            ) : (
+              <ul>
+                {chatMessages.map((msg) => (
+                  <li key={msg.messageId || `${msg.senderId}-${msg.sentAtMs}`}>
+                    <strong>{msg.senderId === clientId ? "You" : msg.senderId}</strong>: {msg.text}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="actions">
+            <input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder={activeRoom ? "Type a message..." : "Join a room to chat"}
+              disabled={!activeRoom}
+              maxLength={500}
+            />
+            <button onClick={sendChatMessage} disabled={!activeRoom || !chatInput.trim()}>
+              Send
+            </button>
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>Live Metrics (M9/M15)</h2>
+          <ul>
+            <li>Client peers: {peers.length}</li>
+            <li>RTC mode: {forceTurnOnly ? "relay-only" : "auto"}</li>
+            <li>Download: {downloadKbps} kbps</li>
+            <li>Torrent progress: {torrentProgressPct}%</li>
+            <li>Sync drift: {syncDriftSec.toFixed(2)}s</li>
+            <li>Server active rooms: {serverMetrics?.activeRooms ?? "n/a"}</li>
+            <li>Server active sockets: {serverMetrics?.activeSockets ?? "n/a"}</li>
+            <li>Join success: {serverMetrics?.counters?.roomJoinSuccess ?? "n/a"}</li>
+            <li>Join failure: {serverMetrics?.counters?.roomJoinFailure ?? "n/a"}</li>
+            <li>Chat forwarded: {serverMetrics?.counters?.chatMessagesForwarded ?? "n/a"}</li>
+            <li>p95 room:join latency: {serverMetrics?.latencyP95Ms?.["room:join"] ?? "n/a"} ms</li>
+            <li>p95 chat:send latency: {serverMetrics?.latencyP95Ms?.["chat:send"] ?? "n/a"} ms</li>
+          </ul>
         </div>
       </section>
     </main>

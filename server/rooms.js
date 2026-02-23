@@ -62,10 +62,15 @@ function isHostClient(roomId, clientId) {
   return room.hostClientId === clientId
 }
 
+function getRoomCount() {
+  return rooms.size
+}
+
 module.exports = {
   addPeer,
   ensureRoom,
   getRoom,
+  getRoomCount,
   isHostClient,
   listPeers,
   removePeer,

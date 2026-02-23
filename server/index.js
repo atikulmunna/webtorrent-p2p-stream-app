@@ -5,7 +5,7 @@ const { randomUUID } = require("crypto")
 const express = require("express")
 const cors = require("cors")
 const { Server } = require("socket.io")
-const { addPeer, ensureRoom, getRoom, isHostClient, listPeers, removePeer } = require("./rooms")
+const { addPeer, ensureRoom, getRoom, getRoomCount, isHostClient, listPeers, removePeer } = require("./rooms")
 
 const SERVER_PORT = Number(process.env.SERVER_PORT || process.env.PORT || 4000)
 const CLIENT_PORT = Number(process.env.CLIENT_PORT || process.env.VITE_DEV_SERVER_PORT || 5173)
@@ -15,6 +15,50 @@ const ROOM_ID_MAX = 64
 const CLIENT_ID_MAX = 64
 const DISPLAY_NAME_MAX = 40
 const CHAT_MSG_MAX = 500
+const LATENCY_SAMPLE_LIMIT = 2000
+
+const metrics = {
+  counters: {
+    roomCreateSuccess: 0,
+    roomCreateFailure: 0,
+    roomJoinSuccess: 0,
+    roomJoinFailure: 0,
+    roomLeave: 0,
+    peerDisconnected: 0,
+    playbackStateForwarded: 0,
+    playbackSeekForwarded: 0,
+    playbackSyncForwarded: 0,
+    chatMessagesForwarded: 0,
+  },
+  errorsByCode: {},
+  latenciesMs: {},
+}
+
+function incCounter(name) {
+  if (!Object.prototype.hasOwnProperty.call(metrics.counters, name)) {
+    metrics.counters[name] = 0
+  }
+  metrics.counters[name] += 1
+}
+
+function incError(code) {
+  metrics.errorsByCode[code] = (metrics.errorsByCode[code] || 0) + 1
+}
+
+function recordLatency(eventName, startedAt) {
+  const elapsed = Date.now() - startedAt
+  if (!metrics.latenciesMs[eventName]) metrics.latenciesMs[eventName] = []
+  const arr = metrics.latenciesMs[eventName]
+  arr.push(elapsed)
+  if (arr.length > LATENCY_SAMPLE_LIMIT) arr.shift()
+}
+
+function p95(values) {
+  if (!values || values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const idx = Math.floor(sorted.length * 0.95)
+  return sorted[Math.min(idx, sorted.length - 1)]
+}
 
 function isSafeId(value, maxLength) {
   return typeof value === "string" && value.length > 0 && value.length <= maxLength && /^[a-zA-Z0-9_-]+$/.test(value)
@@ -73,6 +117,22 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "signaling-server", ts: Date.now() })
 })
 
+app.get("/metrics", (_req, res) => {
+  const latencyP95 = Object.fromEntries(
+    Object.entries(metrics.latenciesMs).map(([eventName, samples]) => [eventName, p95(samples)]),
+  )
+
+  res.json({
+    ok: true,
+    ts: Date.now(),
+    activeRooms: getRoomCount(),
+    activeSockets: io.engine?.clientsCount || 0,
+    counters: metrics.counters,
+    errorsByCode: metrics.errorsByCode,
+    latencyP95Ms: latencyP95,
+  })
+})
+
 const server = http.createServer(app)
 const io = new Server(server, {
   cors: {
@@ -111,13 +171,20 @@ async function startWebTorrentTracker() {
 
 io.on("connection", (socket) => {
   socket.on("room:create", ({ roomId, hostClientId, displayName }, ack) => {
+    const startedAt = Date.now()
     if (!checkRateLimit(socket, "room:create", 10, 60_000)) {
       ack?.({ ok: false, errorCode: "RATE_LIMITED" })
+      incCounter("roomCreateFailure")
+      incError("RATE_LIMITED")
+      recordLatency("room:create", startedAt)
       return
     }
 
     if (!validateRoomPayload(roomId, hostClientId)) {
       ack?.({ ok: false, errorCode: "INVALID_PAYLOAD" })
+      incCounter("roomCreateFailure")
+      incError("INVALID_PAYLOAD")
+      recordLatency("room:create", startedAt)
       return
     }
 
@@ -128,22 +195,34 @@ io.on("connection", (socket) => {
 
     ack?.({ ok: true, roomId, createdAt: Date.now() })
     io.to(roomId).emit("room:peers", { roomId, peers: listPeers(roomId) })
+    incCounter("roomCreateSuccess")
+    recordLatency("room:create", startedAt)
   })
 
   socket.on("room:join", ({ roomId, guestClientId, displayName }, ack) => {
+    const startedAt = Date.now()
     if (!checkRateLimit(socket, "room:join", 20, 60_000)) {
       ack?.({ ok: false, errorCode: "RATE_LIMITED" })
+      incCounter("roomJoinFailure")
+      incError("RATE_LIMITED")
+      recordLatency("room:join", startedAt)
       return
     }
 
     if (!validateRoomPayload(roomId, guestClientId)) {
       ack?.({ ok: false, errorCode: "INVALID_PAYLOAD" })
+      incCounter("roomJoinFailure")
+      incError("INVALID_PAYLOAD")
+      recordLatency("room:join", startedAt)
       return
     }
 
     const room = getRoom(roomId)
     if (!room) {
       ack?.({ ok: false, errorCode: "ROOM_NOT_FOUND" })
+      incCounter("roomJoinFailure")
+      incError("ROOM_NOT_FOUND")
+      recordLatency("room:join", startedAt)
       return
     }
 
@@ -159,47 +238,70 @@ io.on("connection", (socket) => {
     })
     io.to(roomId).emit("room:peers", { roomId, peers: listPeers(roomId) })
     ack?.({ ok: true, roomId })
+    incCounter("roomJoinSuccess")
+    recordLatency("room:join", startedAt)
   })
 
   socket.on("playback:state", (payload) => {
+    const startedAt = Date.now()
     if (!checkRateLimit(socket, "playback:state", 60, 60_000)) {
       socket.emit("room:error", { errorCode: "RATE_LIMITED", context: "playback:state" })
+      incError("RATE_LIMITED")
+      recordLatency("playback:state", startedAt)
       return
     }
     if (!validatePlaybackPayload(payload) || !["play", "pause"].includes(payload.state)) {
       socket.emit("room:error", { errorCode: "INVALID_PAYLOAD", context: "playback:state" })
+      incError("INVALID_PAYLOAD")
+      recordLatency("playback:state", startedAt)
       return
     }
 
     const senderId = socket.data?.clientId
     if (!senderId || !isHostClient(payload.roomId, senderId)) {
       socket.emit("room:error", { errorCode: "UNAUTHORIZED", context: "playback:state" })
+      incError("UNAUTHORIZED")
+      recordLatency("playback:state", startedAt)
       return
     }
     socket.to(payload.roomId).emit("playback:state", payload)
+    incCounter("playbackStateForwarded")
+    recordLatency("playback:state", startedAt)
   })
 
   socket.on("playback:seek", (payload) => {
+    const startedAt = Date.now()
     if (!checkRateLimit(socket, "playback:seek", 120, 60_000)) {
       socket.emit("room:error", { errorCode: "RATE_LIMITED", context: "playback:seek" })
+      incError("RATE_LIMITED")
+      recordLatency("playback:seek", startedAt)
       return
     }
     if (!validatePlaybackPayload(payload)) {
       socket.emit("room:error", { errorCode: "INVALID_PAYLOAD", context: "playback:seek" })
+      incError("INVALID_PAYLOAD")
+      recordLatency("playback:seek", startedAt)
       return
     }
 
     const senderId = socket.data?.clientId
     if (!senderId || !isHostClient(payload.roomId, senderId)) {
       socket.emit("room:error", { errorCode: "UNAUTHORIZED", context: "playback:seek" })
+      incError("UNAUTHORIZED")
+      recordLatency("playback:seek", startedAt)
       return
     }
     socket.to(payload.roomId).emit("playback:seek", payload)
+    incCounter("playbackSeekForwarded")
+    recordLatency("playback:seek", startedAt)
   })
 
   socket.on("playback:sync", (payload) => {
+    const startedAt = Date.now()
     if (!checkRateLimit(socket, "playback:sync", 180, 60_000)) {
       socket.emit("room:error", { errorCode: "RATE_LIMITED", context: "playback:sync" })
+      incError("RATE_LIMITED")
+      recordLatency("playback:sync", startedAt)
       return
     }
     if (
@@ -207,24 +309,35 @@ io.on("connection", (socket) => {
       (payload.hostNowMs !== undefined && !Number.isFinite(payload.hostNowMs))
     ) {
       socket.emit("room:error", { errorCode: "INVALID_PAYLOAD", context: "playback:sync" })
+      incError("INVALID_PAYLOAD")
+      recordLatency("playback:sync", startedAt)
       return
     }
 
     const senderId = socket.data?.clientId
     if (!senderId || !isHostClient(payload.roomId, senderId)) {
       socket.emit("room:error", { errorCode: "UNAUTHORIZED", context: "playback:sync" })
+      incError("UNAUTHORIZED")
+      recordLatency("playback:sync", startedAt)
       return
     }
     socket.to(payload.roomId).emit("playback:sync", payload)
+    incCounter("playbackSyncForwarded")
+    recordLatency("playback:sync", startedAt)
   })
 
   socket.on("chat:send", (payload) => {
+    const startedAt = Date.now()
     if (!checkRateLimit(socket, "chat:send", 30, 60_000)) {
       socket.emit("room:error", { errorCode: "RATE_LIMITED", context: "chat:send" })
+      incError("RATE_LIMITED")
+      recordLatency("chat:send", startedAt)
       return
     }
     if (!validateChatPayload(payload)) {
       socket.emit("room:error", { errorCode: "INVALID_PAYLOAD", context: "chat:send" })
+      incError("INVALID_PAYLOAD")
+      recordLatency("chat:send", startedAt)
       return
     }
 
@@ -236,25 +349,38 @@ io.on("connection", (socket) => {
       text,
       sentAtMs: payload.sentAtMs || Date.now(),
     })
+    incCounter("chatMessagesForwarded")
+    recordLatency("chat:send", startedAt)
   })
 
   socket.on("room:leave", ({ roomId, clientId }) => {
+    const startedAt = Date.now()
     if (!validateRoomPayload(roomId, clientId)) {
       socket.emit("room:error", { errorCode: "INVALID_PAYLOAD", context: "room:leave" })
+      incError("INVALID_PAYLOAD")
+      recordLatency("room:leave", startedAt)
       return
     }
     socket.leave(roomId)
     removePeer(roomId, clientId)
     io.to(roomId).emit("room:peer-left", { roomId, clientId, leftAt: Date.now() })
     io.to(roomId).emit("room:peers", { roomId, peers: listPeers(roomId) })
+    incCounter("roomLeave")
+    recordLatency("room:leave", startedAt)
   })
 
   socket.on("disconnect", () => {
+    const startedAt = Date.now()
     const { roomId, clientId } = socket.data || {}
-    if (!roomId || !clientId) return
+    if (!roomId || !clientId) {
+      recordLatency("disconnect", startedAt)
+      return
+    }
     removePeer(roomId, clientId)
     io.to(roomId).emit("room:peer-left", { roomId, clientId, leftAt: Date.now() })
     io.to(roomId).emit("room:peers", { roomId, peers: listPeers(roomId) })
+    incCounter("peerDisconnected")
+    recordLatency("disconnect", startedAt)
   })
 })
 

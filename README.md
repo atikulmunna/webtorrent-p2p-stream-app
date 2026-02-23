@@ -15,6 +15,9 @@ Browser-based P2P video streaming app spec and execution plan using WebTorrent +
   - `M5` in progress: host playback events (`play/pause/seek`) relay to guests
   - `M6` in progress: guest drift correction from periodic sync events
   - `M7` in progress: peer counter and peer list UI
+  - `M8` in progress: chat send/receive UI wired to socket events
+  - `M9` in progress: live client metrics panel added
+  - `M15` in progress: server `/metrics` endpoint with counters and p95 latencies
   - `M13` in progress: MVP file compatibility guardrails and user errors
   - `M14` in progress: server-side host authorization for playback events
 - Project specification and execution matrix live in `WebTorrent_P2P_Spec.md`.
@@ -51,6 +54,7 @@ npm run dev
 
 - Client: `http://localhost:5173`
 - Server health: `http://localhost:4000/health`
+- Server metrics: `http://localhost:4000/metrics`
 - Local WebSocket tracker: `ws://localhost:8000/announce` (started by server)
 
 ## Environment

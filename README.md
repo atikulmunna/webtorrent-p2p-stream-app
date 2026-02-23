@@ -10,11 +10,11 @@ Browser-based P2P video streaming app spec and execution plan using WebTorrent +
   - `server`: Express + Socket.io signaling server with room lifecycle events
 - Implemented baseline features:
   - `M1` done: host file upload and magnet generation via WebTorrent
-  - `M2` in progress: room create/join/leave with live peer presence
+  - `M2` done: room create/join/leave with peer presence consistency
   - `M3` done: guest join by magnet and in-browser video render
-  - `M5` in progress: host playback events (`play/pause/seek`) relay to guests
-  - `M6` in progress: guest drift correction from periodic sync events
-  - `M7` in progress: peer counter and peer list UI
+  - `M5` done: host playback controls relay to guests within smoke-validated p95 latency target
+  - `M6` in progress: guest drift correction from periodic sync events (event-forwarding smoke added)
+  - `M7` done: peer list/count consistency validated by integration smoke
   - `M8` done: chat send/receive with server-side validation and rate limiting
   - `M9` done: live client/server metrics panel for throughput, drift, and RTC mode
   - `M15` done: server observability includes `/metrics` + retained structured `/logs`
@@ -84,9 +84,9 @@ npm run dev
 
 ## Next Build Target
 
-1. Complete `M1/M3` DoD validation (repeatable 10-minute stream tests, failure handling).
-2. Complete `M4` forced-relay verification with stable tracker/peer discovery runs.
-3. Complete `M11` DoD validation under primary-tracker failure, then advance `M13`/`M16` closure.
+1. Complete `M4` forced-relay verification with stable tracker/peer discovery runs.
+2. Complete `M6` drift DoD validation (`<=1.0s` p95 over 10-minute run).
+3. Complete `M11`/`M13`, then execute `M16` deploy + public smoke.
 
 ## Validation Workflow (M1/M3)
 
@@ -129,6 +129,12 @@ Smoke test for M8/M15 wiring (chat + `/metrics` counters):
 npm run smoke:m8m15
 ```
 
+Smoke test for M2/M5/M6/M7 core room/playback flows:
+
+```bash
+npm run smoke:m2m5m6m7
+```
+
 Smoke test for M14 security controls (host authority + anti-spoof checks):
 
 ```bash
@@ -139,6 +145,18 @@ Smoke test for M12 reconnect flow (`room:resume` + playback snapshot replay):
 
 ```bash
 npm run smoke:m12
+```
+
+Policy/unit tests for M11/M13 helpers:
+
+```bash
+npm run test:policy
+```
+
+Full local verification gate (required before progressing milestones):
+
+```bash
+npm run verify:all
 ```
 
 Current checks:

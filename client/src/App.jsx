@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { io } from "socket.io-client"
+import {
+  computeTrackerFailover,
+  extractTrackerUrl,
+  getCompatibilityHint,
+  getNormalizeCommandHint,
+  isLikelySupportedMvpVideo,
+} from "./lib/stream-policy"
 import "./App.css"
 
 function App() {
@@ -130,12 +137,6 @@ function App() {
     return true
   }
 
-  const extractTrackerUrl = (text) => {
-    if (typeof text !== "string") return null
-    const match = text.match(/wss?:\/\/[^\s)]+/i)
-    return match?.[0] || null
-  }
-
   const getAnnounceTrackers = (overrideTrackers = null) => {
     if (Array.isArray(overrideTrackers) && overrideTrackers.length > 0) return overrideTrackers
     if (activeTrackerUrls.length > 0) return activeTrackerUrls
@@ -143,33 +144,20 @@ function App() {
   }
 
   const markTrackerFailure = (url) => {
-    if (!url || !trackerUrls.includes(url)) return null
-    const current = trackerFailureRef.current.get(url) || 0
-    const nextCount = current + 1
-    trackerFailureRef.current.set(url, nextCount)
-    if (nextCount < trackerFailThreshold) return null
+    const result = computeTrackerFailover({
+      trackerUrls,
+      activeTrackerUrls: getAnnounceTrackers(),
+      failureMap: trackerFailureRef.current,
+      failedUrl: url,
+      threshold: trackerFailThreshold,
+    })
+    if (!result) return null
+    trackerFailureRef.current = result.nextFailureMap
+    if (!result.quarantined || !result.nextTrackers) return null
 
-    const nextTrackers = getAnnounceTrackers().filter((item) => item !== url)
-    if (nextTrackers.length === 0) return null
-
-    setActiveTrackerUrls(nextTrackers)
+    setActiveTrackerUrls(result.nextTrackers)
     addEvent(`Tracker quarantined after repeated errors: ${url}`)
-    return nextTrackers
-  }
-
-  const isLikelySupportedMvpVideo = (file) => {
-    const lower = file.name.toLowerCase()
-    const isMp4 = lower.endsWith(".mp4")
-    const isTypeMp4 = (file.type || "").toLowerCase().includes("mp4")
-    return isMp4 || isTypeMp4
-  }
-
-  const getCompatibilityHint = (file) => {
-    const lower = file.name.toLowerCase()
-    if (!lower.endsWith(".mp4")) {
-      return "Best compatibility: MP4 container with H.264 video + AAC audio."
-    }
-    return "If playback is black/stuck, normalize to H.264/AAC using the convert command in README."
+    return result.nextTrackers
   }
 
   const clearVideoElement = () => {
@@ -319,6 +307,7 @@ function App() {
 
       if (reRenderAttemptsRef.current >= 1) {
         addEvent("! Playback stalled after 100%. Likely codec/profile incompatibility.")
+        addEvent(`! ${getNormalizeCommandHint(currentVideoFileRef.current?.name || "input.mp4")}`)
         setStreamStatus("Error")
         return
       }
@@ -521,6 +510,7 @@ function App() {
     if (!isLikelySupportedMvpVideo(selectedFile)) {
       setStreamStatus("Error")
       addEvent("! Unsupported file extension/type. Use MP4 with H.264/AAC for reliable playback.")
+      addEvent(`! ${getNormalizeCommandHint(selectedFile.name)}`)
       return
     }
     addEvent(getCompatibilityHint(selectedFile))
@@ -650,6 +640,7 @@ function App() {
 
       if (!videoFile) {
         addEvent("! No supported file found. MVP supports .mp4 or .webm stream inputs.")
+        addEvent("! Host should use MP4 H.264/AAC source.")
         setStreamStatus("Error")
         return
       }
